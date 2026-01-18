@@ -5,5 +5,7 @@ const controller = require("./../../controller/Customer/customer.controller")
 router.post("/register", controller.register);
 router.post("/verifyAccount", controller.verifyAccount);
 router.post("/resendOTP", controller.resendOtp);
+router.post("/forgotPass", controller.forgotPassword);
+router.post("/resetPass", controller.resetPassword);
 
 module.exports = router;
