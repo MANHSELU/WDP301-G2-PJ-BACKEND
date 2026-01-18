@@ -1,6 +1,7 @@
 const User = require("../../model/Users");
 const Role = require("../../model/Role");
 const bcrypt = require("bcryptjs");
+const { generateToken } = require("../../util/jwt");
 
 module.exports.register = async (req, res) => {
   try {
@@ -9,7 +10,6 @@ module.exports.register = async (req, res) => {
     if (!name || !phone || !password || !confirmPassword) {
       return res.status(400).json({ message: "Input cannot be empty" });
     }
-
     if (password !== confirmPassword) {
       return res.status(400).json({ message: "Password not match" });
     }
@@ -98,6 +98,26 @@ module.exports.resendOtp = async (req, res) => {
     return res.status(500).json({ message: err.message });
   }
 };
+
+module.exports.loginController = async (req, res) => {
+    try {
+        const { phone, password } = req.body;
+
+        const user = await User.findOne({ phone});
+        if (!user) {
+            return res.status(400).json({ message: "User not found" });
+        }
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+        return res.status(400).json({ message: "Mật khẩu không chính xác" });
+          }
+        const token = generateToken(user._id);
+        return res.status(200).json({ token});
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 
 module.exports.forgotPassword = async (req, res) => {
   try {

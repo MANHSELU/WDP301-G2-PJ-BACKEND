@@ -18,7 +18,7 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: true,
-      select: false, // không trả password khi query
+      select: true, 
     },
 
     refreshToken: {
