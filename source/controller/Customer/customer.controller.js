@@ -15,7 +15,12 @@ module.exports.register = async (req, res) => {
     }
     const passwordRegex = /^(?=.*[A-Z]).{9,}$/;
     if (!passwordRegex.test(password)) {
-      return res.status(400).json({message:"Password must be longer than 8 characters and contain at least one uppercase letter"});
+      return res
+        .status(400)
+        .json({
+          message:
+            "Password must be longer than 8 characters and contain at least one uppercase letter",
+        });
     }
     const existedUser = await User.findOne({ phone });
     if (existedUser) {
@@ -57,18 +62,17 @@ module.exports.verifyAccount = async (req, res) => {
       otpExpiredAt: { $gt: Date.now() },
     });
     if (!user) {
-      return res.status(400).json({message: "Invalid or expired OTP",});
+      return res.status(400).json({ message: "Invalid or expired OTP" });
     }
     user.isVerified = true;
     user.otp = null;
     user.otpExpiredAt = null;
     await user.save();
-    return res.status(200).json({message: "OTP verified successfully",});
+    return res.status(200).json({ message: "OTP verified successfully" });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
 };
-
 
 module.exports.resendOtp = async (req, res) => {
   try {
@@ -81,14 +85,89 @@ module.exports.resendOtp = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
     if (user.isVerified) {
-      return res.status(400).json({ message: "Account already verified" });}
+      return res.status(400).json({ message: "Account already verified" });
+    }
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     user.otp = otp;
-    user.otpExpiredAt = Date.now() + 5 * 60 * 1000; 
+    user.otpExpiredAt = Date.now() + 5 * 60 * 1000;
     await user.save();
     console.log("RESEND OTP TO:", phone);
     console.log("OTP:", otp);
-    return res.status(200).json({message: "OTP resent successfully"});
+    return res.status(200).json({ message: "OTP resent successfully" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports.forgotPassword = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ message: "Phone is required" });
+    }
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if (!user.isVerified) {
+      return res.status(400).json({ message: "Account not verified" });
+    }
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = otp;
+    user.otpExpiredAt = Date.now() + 5 * 60 * 1000;
+    await user.save();
+    console.log("SEND OTP TO:", phone);
+    console.log("OTP:", otp);
+    return res.status(200).json({ message: "OTP send successfully" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports.resetPassword = async (req, res) => {
+  try {
+    const { phone, otp, password, confirmPassword } = req.body;
+
+    if (!phone || !otp || !password || !confirmPassword) {
+      return res.status(400).json({ message: "Missing fields" });
+    }
+
+    const user = await User.findOne({ phone });
+    console.log(user)
+    if (!user || !user.isVerified) {
+      return res.status(400).json({ message: "Invalid request" });
+    }
+
+    if (!user.otp || !user.otpExpiredAt) {
+      return res.status(400).json({ message: "OTP not found" });
+    }
+
+    if (String(user.otp) !== String(otp)) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    if (user.otpExpiredAt < Date.now()) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ message: "Passwords do not match" });
+    }
+
+    const passwordRegex = /^(?=.*[A-Z]).{9,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        message:
+          "Password must be longer than 8 characters and contain at least one uppercase letter",
+      });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.otp = null;
+    user.otpExpiredAt = null;
+
+    await user.save();
+    return res.json({ message: "Password reset successful" });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
