@@ -15,12 +15,10 @@ module.exports.register = async (req, res) => {
     }
     const passwordRegex = /^(?=.*[A-Z]).{9,}$/;
     if (!passwordRegex.test(password)) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "Password must be longer than 8 characters and contain at least one uppercase letter",
-        });
+      return res.status(400).json({
+        message:
+          "Password must be longer than 8 characters and contain at least one uppercase letter",
+      });
     }
     const existedUser = await User.findOne({ phone });
     if (existedUser) {
@@ -100,24 +98,23 @@ module.exports.resendOtp = async (req, res) => {
 };
 
 module.exports.loginController = async (req, res) => {
-    try {
-        const { phone, password } = req.body;
+  try {
+    const { phone, password } = req.body;
 
-        const user = await User.findOne({ phone});
-        if (!user) {
-            return res.status(400).json({ message: "User not found" });
-        }
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-        return res.status(400).json({ message: "Mật khẩu không chính xác" });
-          }
-        const token = generateToken(user._id);
-        return res.status(200).json({ token});
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
     }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Password is not correct" });
+    }
+    const token = generateToken(user._id);
+    return res.status(200).json({ token });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
-
 
 module.exports.forgotPassword = async (req, res) => {
   try {
@@ -153,7 +150,7 @@ module.exports.resetPassword = async (req, res) => {
     }
 
     const user = await User.findOne({ phone });
-    console.log(user)
+    console.log(user);
     if (!user || !user.isVerified) {
       return res.status(400).json({ message: "Invalid request" });
     }
@@ -188,6 +185,47 @@ module.exports.resetPassword = async (req, res) => {
 
     await user.save();
     return res.json({ message: "Password reset successful" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports.changePass = async (req, res) => {
+  try {
+         const userId = req.userId;
+    const {oldPass, newPass, confirmNewPass } = req.body;
+    if ( !oldPass || !newPass || !confirmNewPass) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+    const user = await User.findById(userId);
+    console.log(user);
+    if (!user || !user.isVerified) {
+      return res.status(400).json({ message: "Invalid request" });
+    }
+    const isMatch = await bcrypt.compare(oldPass, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Old password is not correct" });
+    }
+    const passwordRegex = /^(?=.*[A-Z]).{9,}$/;
+    if (!passwordRegex.test(newPass)) {
+      return res.status(400).json({
+        message:
+          "Password must be longer than 8 characters and contain at least one uppercase letter",
+      });
+    }
+     if (newPass !== confirmNewPass) {
+      return res.status(400).json({ message: "Passwords do not match" });
+    }
+    if (oldPass === newPass) {
+      return res.status(400).json({
+        message: "New password must be different from old password",
+      });
+    }
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPass, salt);
+    user.password = hashedPassword;
+    await user.save();
+    return res.status(200).json({ message: "Password change successfully" });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
