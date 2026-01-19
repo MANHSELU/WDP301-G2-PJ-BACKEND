@@ -192,11 +192,12 @@ module.exports.resetPassword = async (req, res) => {
 
 module.exports.changePass = async (req, res) => {
   try {
-    const { phone, oldPass, newPass, confirmNewPass } = req.body;
-    if (!phone || !oldPass || !newPass || !confirmNewPass) {
+         const userId = req.userId;
+    const {oldPass, newPass, confirmNewPass } = req.body;
+    if ( !oldPass || !newPass || !confirmNewPass) {
       return res.status(400).json({ message: "Missing required fields" });
     }
-    const user = await User.findOne({ phone });
+    const user = await User.findById(userId);
     console.log(user);
     if (!user || !user.isVerified) {
       return res.status(400).json({ message: "Invalid request" });
@@ -205,8 +206,6 @@ module.exports.changePass = async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ message: "Old password is not correct" });
     }
-   
-    
     const passwordRegex = /^(?=.*[A-Z]).{9,}$/;
     if (!passwordRegex.test(newPass)) {
       return res.status(400).json({
