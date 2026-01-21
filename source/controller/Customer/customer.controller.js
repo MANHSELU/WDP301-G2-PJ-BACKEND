@@ -2,6 +2,8 @@ const User = require("../../model/Users");
 const Role = require("../../model/Role");
 const bcrypt = require("bcryptjs");
 const { generateToken } = require("../../util/jwt");
+const cloudinary = require("../../config/cloudinaryConfig");
+const streamifier = require("streamifier");
 
 module.exports.register = async (req, res) => {
   try {
@@ -192,9 +194,9 @@ module.exports.resetPassword = async (req, res) => {
 
 module.exports.changePass = async (req, res) => {
   try {
-         const userId = req.userId;
-    const {oldPass, newPass, confirmNewPass } = req.body;
-    if ( !oldPass || !newPass || !confirmNewPass) {
+    const userId = req.userId;
+    const { oldPass, newPass, confirmNewPass } = req.body;
+    if (!oldPass || !newPass || !confirmNewPass) {
       return res.status(400).json({ message: "Missing required fields" });
     }
     const user = await User.findById(userId);
@@ -213,7 +215,7 @@ module.exports.changePass = async (req, res) => {
           "Password must be longer than 8 characters and contain at least one uppercase letter",
       });
     }
-     if (newPass !== confirmNewPass) {
+    if (newPass !== confirmNewPass) {
       return res.status(400).json({ message: "Passwords do not match" });
     }
     if (oldPass === newPass) {
@@ -228,5 +230,74 @@ module.exports.changePass = async (req, res) => {
     return res.status(200).json({ message: "Password change successfully" });
   } catch (err) {
     return res.status(500).json({ message: err.message });
+  }
+}
+module.exports.getProfile = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const user = await User.findById(userId).select(
+      "name phone avatar role createdAt"
+    ).populate("role", "name");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    return res.status(200).json({
+      user: {
+        id: user._id,
+        name: user.name,
+        phone: user.phone,
+        avatar: user.avatar?.url || null,
+        role: user.role,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+
+module.exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const name = req.body?.name;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if (name) {
+      user.name = name;
+    }
+    if (req.file) {
+      if (user.avatar?.publicId) {
+        await cloudinary.uploader.destroy(user.avatar.publicId);
+      }
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: "WDP301" },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        streamifier.createReadStream(req.file.buffer).pipe(stream);
+      });
+      user.avatar = {
+        url: result.secure_url,
+        publicId: result.public_id,
+      };
+    }
+    await user.save();
+    return res.status(200).json({
+      message: "Update profile successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        avatar: user.avatar?.url || null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };

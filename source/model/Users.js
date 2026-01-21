@@ -7,18 +7,16 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-
     phone: {
       type: String,
       required: true,
       unique: true,
       match: /^[0-9]{9,11}$/,
     },
-
     password: {
       type: String,
       required: true,
-      select: true, 
+      select: true,
     },
 
     refreshToken: {
@@ -28,9 +26,15 @@ const userSchema = new mongoose.Schema(
     },
 
     avatar: {
-      type: String,
-      default:
-        "https://static.vecteezy.com/system/resources/previews/036/280/651/original/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg",
+      url: {
+        type: String,
+        default:
+          "https://static.vecteezy.com/system/resources/previews/036/280/651/original/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg",
+      },
+      publicId: {
+        type: String,
+        default: null,
+      },
     },
 
     role: {
