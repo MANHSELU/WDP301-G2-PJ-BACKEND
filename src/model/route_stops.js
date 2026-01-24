@@ -1,4 +1,4 @@
-// đây chính là các điểm dường  cụ thể trên 1 chuyến 
+// đây chính là các điểm dường  cụ thể trên 1 chuyến    
 const mongoose = require("mongoose");
 
 const RouteStopSchema = new mongoose.Schema(
