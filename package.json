@@ -8,7 +8,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon source/Server.js"
+    "start": "nodemon --inspect Server.js"
   },
   "dependencies": {
     "accepts": "^2.0.0",
@@ -64,6 +64,7 @@
     "is-glob": "^4.0.3",
     "is-number": "^7.0.0",
     "is-promise": "^4.0.0",
+    "jsonwebtoken": "^9.0.3",
     "math-intrinsics": "^1.1.0",
     "media-typer": "^1.1.0",
     "merge-descriptors": "^2.0.0",
