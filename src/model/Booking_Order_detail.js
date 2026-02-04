@@ -43,23 +43,21 @@ const TripBookingSchema = new mongoose.Schema(
             enum: ["BOOKED", "CANCELLED", "NO_SHOW", "COMPLETED"],
             default: "BOOKED",
         },
-
+        // phụ xe đi cập lại hành khách đã lên xe chưa 
         checkin_status: {
             type: String,
             enum: ["NOT_CHECKED", "CHECKED_IN"],
             default: "NOT_CHECKED",
         },
         // điểm hành khách lên xe
-        pickup_route_stop_id: {
+        start_decription_id: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: "RouteStop",
-            required: true,
+            ref: "StopLocation",
         },
         // điểm hành khách xuống xe
-        dropoff_route_stop_id: {
+        end_decription_id: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: "RouteStop",
-            required: true,
+            ref: "StopLocation",
         },
         //Thứ tự điểm đón trên tuyến
         pickup_stop_order: {

@@ -1,4 +1,4 @@
-//mô tả chi tiết vị trí chính xác lên  xuống của vé xe nếu muốn 
+//mô tả chi tiết vị trí chính xác lên  xuống của vé xe nếu muốn
 const mongoose = require("mongoose");
 
 const BookingLocationSchema = new mongoose.Schema(

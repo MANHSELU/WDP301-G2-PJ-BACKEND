@@ -1,4 +1,4 @@
-// đây là các điểm node
+// đây là bảng để lưu toàn bộ tỉnh thành mình đi kéo api về (node)
 const mongoose = require("mongoose");
 
 const StopSchema = new mongoose.Schema(

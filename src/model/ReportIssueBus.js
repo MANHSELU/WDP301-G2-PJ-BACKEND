@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
-
-const BusStatusLogSchema = new mongoose.Schema(
+// báo cáo sự cố    
+const ReportIssueBus = new mongoose.Schema(
     {
         bus_license_plate: {
             type: String,
@@ -63,8 +63,8 @@ const BusStatusLogSchema = new mongoose.Schema(
 /**
  * Index hỗ trợ dashboard & thống kê
  */
-BusStatusLogSchema.index({ bus_license_plate: 1, status: 1 });
-BusStatusLogSchema.index({ severity: 1 });
-BusStatusLogSchema.index({ issue_type: 1 });
+ReportIssueBus.index({ bus_license_plate: 1, status: 1 });
+ReportIssueBus.index({ severity: 1 });
+ReportIssueBus.index({ issue_type: 1 });
 
-module.exports = mongoose.model("BusStatusLog", BusStatusLogSchema);
+module.exports = mongoose.model("BusStatusLog", ReportIssueBus);
