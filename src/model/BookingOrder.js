@@ -1,4 +1,4 @@
-// đây là bảng đặt vé của từng người 
+// đây là bảng đặt vé của từng người ( đặt vé)
 const mongoose = require("mongoose");
 
 const BookingOrderSchema = new mongoose.Schema(
@@ -14,19 +14,19 @@ const BookingOrderSchema = new mongoose.Schema(
             ref: "Trip",
             required: true,
         },
-
-        pickup_stop_id: {
+        // điểm bắt đầu ( dn )
+        start_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "RouteStop",
             required: true,
         },
-
-        dropoff_stop_id: {
+        // điểm xuống(hcm)
+        end_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "RouteStop",
             required: true,
         },
-
+        // trạng thái
         order_status: {
             type: String,
             enum: ["CREATED", "PAID", "CANCELLED"],

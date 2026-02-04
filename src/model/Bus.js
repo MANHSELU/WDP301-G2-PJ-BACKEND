@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-
 /**
  * Cột ghế: LEFT / RIGHT / MIDDLE
  */
@@ -68,7 +67,8 @@ const SeatLayoutSchema = new mongoose.Schema(
  * Xe buýt
  */
 const BusSchema = new mongoose.Schema({
-    license_plate: { // Biển số xe
+    // biển số xe
+    license_plate: {
         type: String,
         required: true,
         unique: true,

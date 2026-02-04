@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-
+// chuyến đi  nhưng với nhiều xe và giá khác nhau ( chung 1 tuyến đường )   dn-hcm :  1 thường 
 const TripSchema = new mongoose.Schema(
     {
         route_id: {
@@ -13,7 +13,7 @@ const TripSchema = new mongoose.Schema(
             ref: "Bus",
             required: true,
         },
-
+        // người lai
         driver_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
@@ -25,7 +25,7 @@ const TripSchema = new mongoose.Schema(
             ref: "User",
             required: false,
         },
-        // Thời gian khởi hành
+        // thời gian khởi hành
         departure_time: {
             type: Date,
             required: true,

@@ -1,7 +1,8 @@
 const mongoose = require("mongoose");
-
+// bảng gửi hàng 
 const ParcelSchema = new mongoose.Schema(
     {
+        // tự động sinh ra ( viết thuật toán ) hoặc id
         code: {
             type: String,
             required: true,
@@ -34,26 +35,26 @@ const ParcelSchema = new mongoose.Schema(
             trim: true,
         },
 
-        // điểm logic theo tuyến
-        pickup_stop_id: {
+        // điểm khách hàng gửi hàng
+        start_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "RouteStop",
+            required: true,
+        },
+        // điểm trả hàng
+        end_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "RouteStop",
             required: true,
         },
 
-        dropoff_stop_id: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "RouteStop",
-            required: true,
-        },
-
-        // điểm thực tế chi tiết
+        // điểm khách hàng gửi hàng chi tiết ( chọn )
         pickup_location_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "StopLocation",
             required: false,
         },
-
+        // điểm trả hàng chi tiết
         dropoff_location_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "StopLocation",
@@ -71,13 +72,7 @@ const ParcelSchema = new mongoose.Schema(
             trim: true, // giấy tờ, dễ vỡ, thực phẩm...
         },
 
-        cod_amount: {
-            type: Number,
-            default: 0, // tiền thu hộ
-            min: 0,
-        },
-
-        shipping_fee: {
+        total_price: {
             type: Number,
             required: true,
             min: 0,
