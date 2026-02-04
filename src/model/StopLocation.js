@@ -1,4 +1,4 @@
-// bảng này là vị trí lên xuống của từng node do mình fix cứng
+// bảng này là vị trí lên xuống của từng node do mình fix cứng // stop dn: dn vị trí đón : cây xăng trường đại bách khoa
 const mongoose = require("mongoose");
 
 const StopLocationSchema = new mongoose.Schema(

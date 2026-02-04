@@ -19,6 +19,49 @@ const ColumnSchema = new mongoose.Schema(
     { _id: false }
 );
 
+const RowOverrideSchema = new mongoose.Schema(
+    {
+        // số thứ tự hàng (bắt đầu từ 1)
+        row_index: {
+            type: Number,
+            required: true,
+            min: 1,
+        },
+
+        // tầng (cho xe 2 tầng)
+        floor: {
+            type: Number,
+            default: 1,
+            min: 1,
+            max: 2,
+        },
+
+        // số ghế của từng cột trong hàng này
+        //[ 2 ghế ] [ 1 ghế ] [ 2 ghế ] : left mid right
+        column_overrides: [
+            {
+                column_name: {
+                    type: String,
+                    enum: ["LEFT", "MIDDLE", "RIGHT"],
+                    required: true,
+                },
+
+                seats: {
+                    type: Number,
+                    required: true,
+                    min: 0,
+                },
+            },
+        ],
+
+        // ghi chú nghiệp vụ (tùy chọn)
+        note: {
+            type: String,
+            trim: true,
+        },
+    },
+    { _id: false }
+);
 /**
  * Layout ghế của xe
  */
