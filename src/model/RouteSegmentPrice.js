@@ -1,4 +1,4 @@
-// giá tiền của từng chặng
+// giá tiền của từng chặng 1-2-, 1-3 bao gồm chặng lớn và toàn toàn bộ chặng con của nó
 const mongoose = require("mongoose");
 
 const RouteSegmentPriceSchema = new mongoose.Schema(
@@ -9,13 +9,13 @@ const RouteSegmentPriceSchema = new mongoose.Schema(
             required: true,
         },
 
-        pickup_stop_id: {
+        start_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "RouteStop",
             required: true,
         },
 
-        dropoff_stop_id: {
+        end_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "RouteStop",
             required: true,

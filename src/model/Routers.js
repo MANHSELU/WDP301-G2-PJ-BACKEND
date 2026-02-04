@@ -3,13 +3,14 @@ const mongoose = require("mongoose");
 
 const RouteSchema = new mongoose.Schema(
     {
-        start_stop_id: {
+        // điểm bắt đầu 
+        start_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Stop",
             required: true,
         },
-
-        end_stop_id: {
+        // điểm kết thúc
+        stop_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Stop",
             required: true,
