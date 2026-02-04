@@ -42,7 +42,6 @@ const SeatLayoutSchema = new mongoose.Schema(
             required: true,
             min: 1,
         },
-
         columns: {
             type: [ColumnSchema],
             required: true,
@@ -69,7 +68,7 @@ const SeatLayoutSchema = new mongoose.Schema(
  * Xe buýt
  */
 const BusSchema = new mongoose.Schema({
-    license_plate: {
+    license_plate: { // Biển số xe
         type: String,
         required: true,
         unique: true,

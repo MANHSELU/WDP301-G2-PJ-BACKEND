@@ -1,4 +1,4 @@
-// đây là bảng đặt vé của từng người
+// đây là bảng đặt vé của từng người 
 const mongoose = require("mongoose");
 
 const BookingOrderSchema = new mongoose.Schema(

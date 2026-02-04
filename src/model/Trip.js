@@ -25,7 +25,7 @@ const TripSchema = new mongoose.Schema(
             ref: "User",
             required: false,
         },
-
+        // Thời gian khởi hành
         departure_time: {
             type: Date,
             required: true,

@@ -1,4 +1,4 @@
-// đây là các điểm node
+// đây là bảng 
 const mongoose = require("mongoose");
 
 const StopSchema = new mongoose.Schema(
