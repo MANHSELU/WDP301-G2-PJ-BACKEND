@@ -46,3 +46,12 @@ module.exports.checkaccount = async (req, res, next) => {
         return res.status(403).json({ message: "Invalid token" });
     }
 };
+module.exports.checkRole = (...allowedRoles) => {
+    return (req, res, next) => {
+        const roleName = res.locals.user.role;
+        if (!allowedRoles.includes(roleName)) {
+            return res.status(403).json({ message: "Không có quyền" });
+        }
+        next();
+    };
+};
