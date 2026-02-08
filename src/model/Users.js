@@ -66,6 +66,16 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    faceEmbeddings: {
+      type: [[Number]],
+      default: [],
+      select: false,
+    },
+
+    faceUpdatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
