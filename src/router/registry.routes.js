@@ -10,16 +10,23 @@ module.exports = [
   },
   {
     prefix: "/api/customer/check",
-    middlewares: [checkClient.checkaccount],
+    middlewares:
+      [
+        checkClient.checkaccount,
+        // checkClient.checkRole("696cd1f7cd7d3a094f45fd4b")
+      ],
     router: clientcheck
   },
-  {
-    prefix: "/api/driver/notcheck",
-    router: DriverNotcheck
-  },
+  // {
+  //   prefix: "/api/driver/notcheck",
+  //   router: DriverNotcheck
+  // },
   {
     prefix: "/api/driver/check",
-    middlewares: [checkClient.checkaccount],
+    middlewares: [
+      checkClient.checkaccount,
+      // checkClient.checkRole("6989d2d5753034e791da3d2c")
+    ],
     router: driverCheck
   },
 ];

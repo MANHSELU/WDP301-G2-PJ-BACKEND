@@ -19,4 +19,19 @@ routerUserCheck.post("/face-register",
     faceLoginLimiter,
     jsonLimit10mb,
     driverController.registerCamera);
+routerUserCheck.post(
+    "/face-login",
+    faceLoginLimiter,
+    jsonLimit10mb,
+    driverController.faceLogin
+);
+// view chuyến xe mà mình được đi 
+routerUserCheck.get(
+    "/trips",
+    driverController.trips
+);
+routerUserCheck.post(
+    "/trips",
+    driverController.updateStrip
+);
 module.exports = routerUserCheck;

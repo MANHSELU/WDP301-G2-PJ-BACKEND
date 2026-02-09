@@ -28,15 +28,17 @@ module.exports.checkaccount = async (req, res, next) => {
 
         const users = await user
             .findOne({ _id: decoded.sub })
-            .select("-password")
+            .select("-password -face_embedding")
             .populate("role") // trỏ vào biến trong users
         console.log("usser auth laf : ", users)
         if (!users) {
+            console.log("user không tồn tại ")
             return res.status(404).json({ message: "User not exist" });
         }
 
         res.locals.user = users;
         res.locals.exp = decoded.exp;
+        console.log("pass qua auth")
         next();
     } catch (e) {
         console.error("❌ Lỗi xác thực token:", e.name);
@@ -48,10 +50,13 @@ module.exports.checkaccount = async (req, res, next) => {
 };
 module.exports.checkRole = (...allowedRoles) => {
     return (req, res, next) => {
-        const roleName = res.locals.user.role;
-        if (!allowedRoles.includes(roleName)) {
+        const role = res.locals.user.role;
+        const roleId = role._id.toString();
+        console.log("role id là : ", roleId)
+        if (!allowedRoles.includes(roleId)) {
             return res.status(403).json({ message: "Không có quyền" });
         }
+        console.log("pass qua role thành công")
         next();
     };
 };
