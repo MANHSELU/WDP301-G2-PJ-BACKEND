@@ -3,6 +3,8 @@ const bus = require("./../../model/Bus")
 const router = require("./../../model/Routers")
 const stop = require("./../../model/Stops")
 const bustype = require("./../../model/BusType")
+const router_stop = require("./../../model/route_stops")
+const API = process.env.API_VERIFY;
 module.exports.faceLogin = async (req, res) => {
     try {
         console.log("chạy vào login face")
@@ -17,7 +19,7 @@ module.exports.faceLogin = async (req, res) => {
         }
         // 2️⃣ Gửi sang Python AI
         const pythonRes = await fetch(
-            "http://localhost:8001/face-login",
+            `${API}/face-login`,
             {
                 method: "POST",
                 headers: {
@@ -73,7 +75,7 @@ module.exports.registerCamera = async (req, res) => {
         }
         const userId = res.locals.user.id
         // 3️⃣ Call Python Face Register API
-        const response = await fetch("http://localhost:8001/face-register", {
+        const response = await fetch(`${API}/face-register`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -193,6 +195,60 @@ module.exports.updateStrip = async (req, res) => {
 
     } catch (err) {
         console.log("Lỗi:", err);
+        return res.status(500).json({
+            message: "Server error"
+        });
+    }
+}
+module.exports.tripDetail = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = res.locals.user.id
+        const trips = await trip.findOne({
+            _id: id,
+            $or: [{
+                "drivers.driver_id": userId
+            }
+            ]
+        })
+            .populate("drivers.driver_id", "-face_embedding -password -role")
+            .populate({
+                path: "bus_id",
+                populate: {
+                    path: "bus_type_id"
+                }
+            }
+            )
+            .populate({
+                path: "route_id",
+                populate: [
+                    {
+                        path: "start_id"
+                    },
+                    {
+                        path: "stop_id"
+                    }
+                ]
+            })
+            .populate("assistant_id", "-face_embedding -password -role")
+        if (!trips) {
+            return res.status(404).json({
+                message: "Trip not found"
+            });
+        }
+        // router stop node con là 
+        const router_stops = await router_stop.find({
+            route_id: trips.route_id
+        }).populate("stop_id")
+            .sort({ order: 1 });
+        const tripObj = trips.toObject();
+        console.log("router stops node là : ", router_stops)
+        return res.status(200).json({
+            message: "OK",
+            data: { ...tripObj, router_stops }
+        });
+    } catch (err) {
+        console.log("lỗi trong chương trình trên là : ", err)
         return res.status(500).json({
             message: "Server error"
         });

@@ -34,4 +34,8 @@ routerUserCheck.post(
     "/trips",
     driverController.updateStrip
 );
+routerUserCheck.get(
+    "/trip/:id",
+    driverController.tripDetail
+);
 module.exports = routerUserCheck;
