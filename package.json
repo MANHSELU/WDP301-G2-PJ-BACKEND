@@ -8,7 +8,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon --inspect Server.js"
+    "start": "nodemon --inspect Server.js",
+    "seed": "node src/seeds/seed.js"
   },
   "dependencies": {
     "accepts": "^2.0.0",
