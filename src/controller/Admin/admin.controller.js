@@ -1,5 +1,15 @@
 const Bus = require("../../model/Bus");
+const BusType = require("../../model/BusType");
 
+//Hàm lấy tất cả cái loại xe bustype ra
+module.exports.getAllBusType = async(req,res) =>{
+  try {
+    const busType = await BusType.find().select("name");
+    res.status(200).json(busType);
+  } catch (error) {
+    return res.status(404).json({ message: "Bus Type not found" });
+  }
+}
 // Hàm tạo xe
 module.exports.createBus = async (req, res) => {
   try {
