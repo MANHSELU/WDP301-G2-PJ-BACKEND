@@ -35,5 +35,9 @@ router.post(
 router.put("/locations/:id", adminController.updateLocation);
 router.patch("/locations/:id/status", adminController.updateLocationStatus);
 router.delete("/locations/:id", adminController.deleteLocation);
+router.post("/buses", adminController.createBus);
 
 module.exports = router;
+
+
+

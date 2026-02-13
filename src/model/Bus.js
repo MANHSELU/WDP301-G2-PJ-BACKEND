@@ -84,7 +84,6 @@ const SeatLayoutSchema = new mongoose.Schema(
             required: true,
             min: 1,
         },
-
         columns: {
             type: [ColumnSchema],
             required: true,
