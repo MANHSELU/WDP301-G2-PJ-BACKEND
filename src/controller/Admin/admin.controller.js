@@ -21,12 +21,12 @@ module.exports.getAllAccounts = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const {
       search = "",
@@ -108,12 +108,12 @@ module.exports.getAccountById = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
 
@@ -155,12 +155,12 @@ module.exports.getBusById = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
 
@@ -202,12 +202,12 @@ module.exports.updateBus = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
 
@@ -317,12 +317,12 @@ module.exports.updateBusStatus = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
     const { status } = req.body;
@@ -373,12 +373,12 @@ module.exports.updateBusSeatLayout = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
     const { seat_layout } = req.body;
@@ -486,12 +486,12 @@ module.exports.getAllRoutesAdmin = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { search, is_active, page = 1, limit = 10 } = req.query;
     const { page: validPage, limit: validLimit } = validatePagination(
@@ -562,12 +562,12 @@ module.exports.getRouteByIdAdmin = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
 
@@ -611,12 +611,12 @@ module.exports.updateRoute = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
 
@@ -693,12 +693,12 @@ module.exports.updateRouteStatus = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
     const { is_active } = req.body;
@@ -759,12 +759,12 @@ module.exports.updateRouteStopOrder = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { routeId, stopId } = req.params;
     const { new_order } = req.body;
@@ -882,12 +882,12 @@ module.exports.updateStopPickupStatus = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { routeId, stopId } = req.params;
     const { is_pickup } = req.body;
@@ -943,12 +943,12 @@ module.exports.updateLocation = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
     const { name, address, latitude, longitude, type, is_active } = req.body;
@@ -1042,12 +1042,12 @@ module.exports.updateLocationStatus = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
     const { is_active } = req.body;
@@ -1106,12 +1106,12 @@ module.exports.addStopToRoute = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { routeId } = req.params;
     const { stop_id, stop_order, is_pickup = true } = req.body;
@@ -1247,12 +1247,12 @@ module.exports.removeStopFromRoute = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { routeId, stopId } = req.params;
 
@@ -1326,12 +1326,12 @@ module.exports.addLocationToStop = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { routeId, stopId } = req.params;
     const { name, address, latitude, longitude, type = "BOTH" } = req.body;
@@ -1414,12 +1414,12 @@ module.exports.deleteLocation = async (req, res) => {
   try {
     const currentUser = res.locals.user;
 
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
+    // if (!isAdmin(currentUser)) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied. Admin privileges required.",
+    //   });
+    // }
 
     const { id } = req.params;
 
