@@ -1,4 +1,3 @@
-const { default: mongoose } = require("mongoose");
 const User = require("../../model/Users");
 const Role = require("../../model/Role");
 const Bus = require("../../model/Bus");
@@ -16,7 +15,6 @@ const {
   isValidAccountStatus,
   validatePagination,
 } = require("../../validation/validations");
-const Route = require("../../model/Routers");
 const Route_Stop = require("../../model/route_stops");
 const Stops = require("../../model/Stops");
 //get all acccount
