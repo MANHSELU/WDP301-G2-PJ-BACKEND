@@ -1,6 +1,5 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
-
 const routerdriverNotCheck = express.Router();
 const driverController = require("../../controller/Driver/driver.controller");
 

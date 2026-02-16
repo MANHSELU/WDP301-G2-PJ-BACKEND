@@ -12,9 +12,9 @@ module.exports.isValidObjectId = (id) => {
 /**
  * Check if user is admin
  */
-module.exports.isAdmin = (user) => {
-  return user && user.role && user.role.name.toLowerCase() === "admin";
-};
+// module.exports.isAdmin = (user) => {
+//   return user && user.role && user.role.name.toLowerCase() === "admin";
+// };
 
 // ==================== BUS VALIDATIONS ====================
 

@@ -17,7 +17,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-
     refreshToken: {
       type: String,
       default: null,
@@ -64,11 +63,20 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    faceEmbeddings: {
+      type: [[Number]],
+      default: [],
+      select: false,
+    },
+
+    faceUpdatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
   },
 );
-
 const User = mongoose.model("User", userSchema);
 module.exports = User;

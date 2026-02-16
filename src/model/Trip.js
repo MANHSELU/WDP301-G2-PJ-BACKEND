@@ -13,12 +13,32 @@ const TripSchema = new mongoose.Schema(
             ref: "Bus",
             required: true,
         },
-        // người lai
-        driver_id: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "User",
-            required: true,
-        },
+        // người lái
+        drivers: [
+            {
+                driver_id: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "User",
+                    required: true,
+                },
+                // thời điểm bắt đầu ca lái 
+                shift_start: {
+                    type: Date,
+                    required: true,
+                },
+                // thời điểm kết thúc ca lái 
+                shift_end: {
+                    type: Date,
+                    required: true,
+                },
+                status: {
+                    type: String,
+                    enum: ["PENDING", "RUNNING", "DONE"],
+                    default: "PENDING",
+                },
+            }
+        ],
+
 
         assistant_id: {
             type: mongoose.Schema.Types.ObjectId,
