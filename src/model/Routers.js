@@ -29,7 +29,7 @@ const RouteSchema = new mongoose.Schema(
     {
         timestamps: { createdAt: "created_at", updatedAt: false },
     }
+    
 );
-
 module.exports = mongoose.model("Route", RouteSchema);
 

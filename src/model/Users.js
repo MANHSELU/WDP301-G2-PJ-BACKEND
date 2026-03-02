@@ -7,19 +7,16 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-
     phone: {
       type: String,
       required: true,
       unique: true,
       match: /^[0-9]{9,11}$/,
     },
-
     password: {
       type: String,
       required: true,
     },
-
     refreshToken: {
       type: String,
       default: null,
@@ -66,11 +63,20 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    faceEmbeddings: {
+      type: [[Number]],
+      default: [],
+      select: false,
+    },
+
+    faceUpdatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
   },
 );
-
 const User = mongoose.model("User", userSchema);
 module.exports = User;
