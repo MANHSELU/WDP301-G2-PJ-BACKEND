@@ -1467,3 +1467,100 @@ module.exports.deleteLocation = async (req, res) => {
     });
   }
 };
+
+module.exports.getAllBuses = async (req, res) => {
+  try {
+    const currentUser = res.locals.user;
+    if (!isAdmin(currentUser)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Admin privileges required.",
+      });
+    }
+
+    const {
+      search = "",
+      status = "",
+      bus_type = "",
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    const { page: validPage, limit: validLimit } = validatePagination(
+      page,
+      limit
+    );
+    const skip = (validPage - 1) * validLimit;
+
+    const filter = {};
+
+    if (status && isValidBusStatus(status)) {
+      filter.status = status;
+    }
+
+    if (search && search.trim()) {
+      filter.license_plate = { $regex: search.trim(), $options: "i" };
+    }
+
+    // nếu tìm theo tên loại xe, chuyển sang bus_type_id filter
+    if (bus_type && String(bus_type).trim()) {
+      const matchedTypes = await BusType.find({
+        name: { $regex: String(bus_type).trim(), $options: "i" },
+        isActive: true,
+      }).select("_id");
+      const typeIds = matchedTypes.map((t) => t._id);
+      if (typeIds.length > 0) {
+        filter.bus_type_id = { $in: typeIds };
+      } else {
+        // không có type khớp -> trả về rỗng
+        return res.status(200).json({
+          success: true,
+          message: "Buses retrieved successfully",
+          data: {
+            buses: [],
+            pagination: {
+              currentPage: validPage,
+              totalPages: 0,
+              totalItems: 0,
+              itemsPerPage: validLimit,
+            },
+          },
+        });
+      }
+    }
+
+    const [buses, total] = await Promise.all([
+      Bus.find(filter)
+        .populate("bus_type_id", "name category description")
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(validLimit)
+        .lean(),
+      Bus.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(total / validLimit);
+
+    return res.status(200).json({
+      success: true,
+      message: "Buses retrieved successfully",
+      data: {
+        buses,
+        pagination: {
+          currentPage: validPage,
+          totalPages,
+          totalItems: total,
+          itemsPerPage: validLimit,
+          hasNextPage: validPage < totalPages,
+          hasPrevPage: validPage > 1,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in getAllBuses:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
