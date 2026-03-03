@@ -9,7 +9,7 @@ const StopLocation = require("../../model/StopLocation");
 const mongoose = require("mongoose");
 const {
   isValidObjectId,
-  // isAdmin, 
+  // isAdmin,
   isValidBusStatus,
   validateSeatLayout,
   isValidAccountStatus,
@@ -1082,8 +1082,9 @@ module.exports.updateLocationStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Location ${is_active ? "activated" : "deactivated"
-        } successfully`,
+      message: `Location ${
+        is_active ? "activated" : "deactivated"
+      } successfully`,
       data: {
         _id: updatedLocation._id,
         name: updatedLocation.location_name,
@@ -1466,7 +1467,7 @@ module.exports.deleteLocation = async (req, res) => {
       message: "Internal server error",
     });
   }
-}
+};
 
 //Hàm lấy tất cả cái loại xe bustype ra
 module.exports.getAllBusType = async (req, res) => {
@@ -1499,16 +1500,18 @@ module.exports.createBus = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
-// Hàm lấy tất cả các điểm stop 
+// Hàm lấy tất cả các điểm stop
 module.exports.searchStops = async (req, res) => {
   try {
     const { keyword } = req.query;
-    const searchStops = await Stops.find({ name: { $regex: keyword, $options: "i" } });
+    const searchStops = await Stops.find({
+      name: { $regex: keyword, $options: "i" },
+    });
     return res.status(200).json(searchStops);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
-}
+};
 // Hàm lấy ra những stop ở giữa điểm bắt đầu và kết thúc và sort theo order
 module.exports.getSuggestStops = async (req, res) => {
   try {
@@ -1545,29 +1548,29 @@ module.exports.getSuggestStops = async (req, res) => {
         $geoNear: {
           near: {
             type: "Point",
-            coordinates: startLocation
+            coordinates: startLocation,
           },
           distanceField: "distance",
           spherical: true,
           query: {
             "location.coordinates.1": { $gte: minLat, $lte: maxLat },
             "location.coordinates.0": { $gte: minLng, $lte: maxLng },
-            _id: { $nin: [start._id, end._id] }
-          }
-        }
+            _id: { $nin: [start._id, end._id] },
+          },
+        },
       },
       {
         $match: {
-          distance: { $lte: endDistance }
-        }
+          distance: { $lte: endDistance },
+        },
       },
       {
         $project: {
           name: 1,
           province: 1,
-          distance: 1
-        }
-      }
+          distance: 1,
+        },
+      },
     ]);
     return res.status(200).json({ start, recommendedStops: stops, end });
   } catch (error) {
@@ -1587,12 +1590,10 @@ module.exports.createRoutes = async (req, res) => {
     if (!start_id || !stop_id || !stops) {
       return res.status(404).json({ message: "Các trường nhập là bắt buộc" });
     }
-    const newRoute = await Route.create(
-      {
-        start_id,
-        stop_id,
-      },
-    );
+    const newRoute = await Route.create({
+      start_id,
+      stop_id,
+    });
     await newRoute.save(session);
     const newRoute_Stop = stops.map((s) => ({
       route_id: newRoute._id,
@@ -1618,12 +1619,6 @@ module.exports.createRoutes = async (req, res) => {
 module.exports.getAllBuses = async (req, res) => {
   try {
     const currentUser = res.locals.user;
-    if (!isAdmin(currentUser)) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin privileges required.",
-      });
-    }
 
     const {
       search = "",
@@ -1649,7 +1644,7 @@ module.exports.getAllBuses = async (req, res) => {
       filter.license_plate = { $regex: search.trim(), $options: "i" };
     }
 
-    // nếu tìm theo tên loại xe, chuyển sang bus_type_id filter
+    // Tìm theo tên loại xe
     if (bus_type && String(bus_type).trim()) {
       const matchedTypes = await BusType.find({
         name: { $regex: String(bus_type).trim(), $options: "i" },
@@ -1659,7 +1654,7 @@ module.exports.getAllBuses = async (req, res) => {
       if (typeIds.length > 0) {
         filter.bus_type_id = { $in: typeIds };
       } else {
-        // không có type khớp -> trả về rỗng
+        // Không có type khớp -> trả về rỗng
         return res.status(200).json({
           success: true,
           message: "Buses retrieved successfully",
@@ -1676,6 +1671,8 @@ module.exports.getAllBuses = async (req, res) => {
       }
     }
 
+    console.log("🔍 Filter query:", filter);
+
     const [buses, total] = await Promise.all([
       Bus.find(filter)
         .populate("bus_type_id", "name category description")
@@ -1685,6 +1682,8 @@ module.exports.getAllBuses = async (req, res) => {
         .lean(),
       Bus.countDocuments(filter),
     ]);
+
+    console.log(`✅ Found ${buses.length} buses out of ${total} total`);
 
     const totalPages = Math.ceil(total / validLimit);
 
@@ -1708,6 +1707,7 @@ module.exports.getAllBuses = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message,
     });
   }
 };
