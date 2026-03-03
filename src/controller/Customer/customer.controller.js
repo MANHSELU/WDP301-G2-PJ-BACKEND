@@ -659,6 +659,7 @@ module.exports.getSearch = async (req, res) => {
 module.exports.viewTripBus = async (req, res) => {
   try {
     const { route_id } = req.body
+    console.log("id là : ", route_id)
     if (!route_id) {
       return res.status(404).json({
         "message": "Not Found"
@@ -672,11 +673,11 @@ module.exports.viewTripBus = async (req, res) => {
         populate: [
           {
             path: "start_id",
-            select: "province",
+            select: "province name",
           },
           {
             path: "stop_id",
-            select: "province",
+            select: "province name",
           },
         ],
       })
