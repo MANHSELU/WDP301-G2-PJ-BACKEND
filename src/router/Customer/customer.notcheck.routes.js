@@ -12,4 +12,6 @@ router.get("/routes", controller.getAllRoutes);
 router.get("/routes/search", controller.searchRoutes);
 router.get("/routes/:id", controller.getRouteById);
 router.get("/stops", controller.getAllStops);
+router.post("/search", controller.getSearch);
+router.post("/viewTrip", controller.viewTripBus);
 module.exports = router;

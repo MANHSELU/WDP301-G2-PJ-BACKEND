@@ -8,7 +8,7 @@ const Route = require("../../model/Routers");
 const Stop = require("../../model/Stops");
 const RouteStop = require("../../model/route_stops");
 const StopLocation = require("../../model/StopLocation");
-
+const Trip = require("./../../model/Trip")
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -567,3 +567,135 @@ module.exports.searchRoutes = async (req, res) => {
     });
   }
 };
+// son làm 
+module.exports.getSearch = async (req, res) => {
+  try {
+    console.log("chạy vào search")
+    const { nodeId_start, nodeId_end } = req.body;
+    console.log("nodeid start là : ", nodeId_start)
+    if (!nodeId_start || !nodeId_end) {
+      return res.status(400).json({
+        message: "Thiếu nodeId_start hoặc nodeId_end",
+      });
+    }
+
+    // 1️⃣ Tìm tất cả routeStop của start node
+    const startStops = await RouteStop.find({
+      stop_id: nodeId_start,
+      is_pickup: true,
+    });
+
+    if (!startStops.length) {
+      return res.json([]);
+    }
+
+    const results = [];
+
+    // 2️⃣ Với mỗi start, kiểm tra có end trong cùng route không
+    for (const start of startStops) {
+      const endStop = await RouteStop.findOne({
+        route_id: start.route_id,
+        stop_id: nodeId_end,
+        stop_order: { $gt: start.stop_order }, // đảm bảo đúng chiều
+      });
+      if (endStop) {
+        results.push(endStop);
+      }
+    }
+    const arr = []
+    for (const route of results) {
+      const node = await Route.findOne({
+        _id: route.route_id,
+        is_active: true
+      })
+        .populate({
+          path: "start_id",
+          select: "province"
+        })
+        .populate({
+          path: "stop_id",
+          select: "province"
+        })
+        ;
+
+      // const node = await Trip.findOne({
+      //   route_id: route.route_id,
+      // })
+      //   .populate({
+      //     path: "route_id",
+      //     populate: [
+      //       {
+      //         path: "start_id",
+      //         select: "province",
+      //       },
+      //       {
+      //         path: "stop_id",
+      //         select: "province",
+      //       },
+      //     ],
+      //   })
+      //   .populate({
+      //     path: "bus_id",
+      //     populate: {
+      //       path: "bus_type_id"
+      //     },
+      //     select: "-seat_layout"
+      //   })
+      //   .select("-drivers -assistant_id")
+      if (node) {
+        arr.push(node)
+      }
+    }
+
+    return res.json(arr);
+
+  } catch (err) {
+    console.log("Lỗi của chương trình là:", err);
+    return res.status(500).json({
+      message: "Lỗi server",
+    });
+  }
+};
+module.exports.viewTripBus = async (req, res) => {
+  try {
+    const { route_id } = req.body
+    if (!route_id) {
+      return res.status(404).json({
+        "message": "Not Found"
+      })
+    }
+    const node = await Trip.find({
+      route_id: route_id,
+    })
+      .populate({
+        path: "route_id",
+        populate: [
+          {
+            path: "start_id",
+            select: "province",
+          },
+          {
+            path: "stop_id",
+            select: "province",
+          },
+        ],
+      })
+      .populate({
+        path: "bus_id",
+        populate: {
+          path: "bus_type_id"
+        },
+        select: "-seat_layout"
+      })
+      .select("-drivers -assistant_id")
+    return res.status(201).json({
+      "message": "Success",
+      data: node
+    })
+  } catch (err) {
+    console.log("lỗi trong chương trình là : ", err)
+    return res.status(404).json({
+      "message": "Not Found"
+    })
+  }
+}
