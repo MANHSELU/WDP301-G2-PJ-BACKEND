@@ -6,6 +6,8 @@ const Route = require("../../model/Routers");
 const Stop = require("../../model/Stops");
 const RouteStop = require("../../model/route_stops");
 const StopLocation = require("../../model/StopLocation");
+const {getRouteDistance} = require("../../util/MapDistance");
+const {geocodeVietnamese} = require("../../util/MapGeo");
 const mongoose = require("mongoose");
 const {
   isValidObjectId,
@@ -17,6 +19,7 @@ const {
 } = require("../../validation/validations");
 const Route_Stop = require("../../model/route_stops");
 const Stops = require("../../model/Stops");
+const Trip = require("../../model/Trip");
 //get all acccount
 module.exports.getAllAccounts = async (req, res) => {
   try {
@@ -1587,10 +1590,17 @@ module.exports.createRoutes = async (req, res) => {
     if (!start_id || !stop_id || !stops) {
       return res.status(404).json({ message: "Các trường nhập là bắt buộc" });
     }
+    const startStop = await Stop.findById(start_id);
+    const endStop = await Stop.findById(stop_id);
+    const [startLng,startLat] = startStop.location.coordinates;
+    const [endLng,endLat] = endStop.location.coordinates;
+    const routeInformation = await getRouteDistance(startLng,startLat,endLng,endLat);
     const newRoute = await Route.create(
       {
         start_id,
         stop_id,
+        distance_km: routeInformation.distance_km,
+        estimated_duration: routeInformation.duration_hour,
       },
     );
     await newRoute.save(session);
@@ -1614,3 +1624,268 @@ module.exports.createRoutes = async (req, res) => {
     session.endSession();
   }
 };
+// Hàm lấy vị trí Stop Location
+module.exports.getGeoOfStopLocation = async (req, res) => {
+  try {
+    const { location_name } = req.body;
+    if (!location_name) {
+      return res.status(400).json({ message: "Các trường là bắt buộc" });
+    }
+    const coordinates = await geocodeVietnamese(location_name);
+    if (!coordinates) {
+      return res.status(404).json({ message: "Không tìm thấy địa điểm" });
+    }
+    return res.status(200).json({ coordinates });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+// Hàm tạo Stop location;
+module.exports.createStopLocation = async (req,res) =>{
+  try {
+      const {stop_id,location_name,address,location} = req.body;
+      if(!stop_id || !location_name || !address || !location){
+        return res.status(400).json({message: "Các trường là bắt buộc"});
+      };
+      const stopLocation = await StopLocation.findOne({location_name});
+      if(stopLocation){
+        return res.status(400).json({message: "Vị trí lên xuống này đã tồn tại"})
+      };
+      const newStopLocation = await StopLocation.create({
+        stop_id,
+        location_name,
+        address,
+        location,
+      });
+      await newStopLocation.save();
+      return res.status(201).json({message: "Tạo vị trí lên xuống thành công"});
+  } catch (error) {
+      console.error("FULL ERROR:", error);
+      return res.status(500).json({message: error.message});
+  }
+};
+// Hàm get all route
+  module.exports.getAllRoutes = async (req,res) =>{
+    try {
+    const allRoutes = await Route.find().select("start_id stop_id estimated_duration").populate("start_id","name").populate("stop_id","name");
+    return res.status(200).json(allRoutes);
+    } catch (error) {
+    return res.status(500).json({message: error.message});
+    }
+  };
+// Hàm lấy tất cả xe đã check conflict lịch
+  module.exports.getAllBuses = async (req, res) => {
+  try {
+    const { departure_time, arrival_time } = req.query;
+    if (!departure_time || !arrival_time) {
+      const allBuses = await Bus.find()
+        .select("bus_type_id license_plate")
+        .populate("bus_type_id", "name");
+      return res.status(200).json(allBuses);
+    }
+    const departureDate = new Date(departure_time);
+    const arrivalDate = new Date(arrival_time);
+    const conflictingTrips = await Trip.find({
+      status: { $in: ["SCHEDULED", "RUNNING"] },
+      $or: [
+        {
+          departure_time: { $lte: departureDate },
+          arrival_time: { $gte: departureDate }
+        },
+        {
+          departure_time: { $lte: arrivalDate },
+          arrival_time: { $gte: arrivalDate }
+        },
+        {
+          departure_time: { $gte: departureDate },
+          arrival_time: { $lte: arrivalDate }
+        }
+      ]
+    }).select("bus_id");
+    const busyBusIds = conflictingTrips.map(trip => trip.bus_id.toString());
+    const availableBuses = await Bus.find({
+      _id: { $nin: busyBusIds }
+    })
+      .select("bus_type_id license_plate")
+      .populate("bus_type_id", "name");
+    return res.status(200).json(availableBuses);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+// Hàm lấy tài xế đã check conflict lịch
+module.exports.searchDrivers = async (req, res) => {
+  try {
+    const { keyword, shift_start, shift_end } = req.query;
+    if (!keyword || keyword.trim().length < 2) {
+      return res.status(400).json({
+        message: "Keyword phải có ít nhất 2 ký tự",
+      });
+    }
+    const driverRole = await Role.findOne({ name: "DRIVER" }).lean();
+    if (!driverRole) {
+      return res.status(404).json({ message: "Không tìm thấy role DRIVER" });
+    }
+    const drivers = await User.find({
+      role: driverRole._id,           
+      name: { $regex: keyword.trim(), $options: "i" },
+    })
+      .select("name email phone")
+      .lean();
+    if (!shift_start || !shift_end) {
+      return res.status(200).json(drivers);
+    }
+    const shiftStartDate = new Date(shift_start);
+    const shiftEndDate = new Date(shift_end);
+    const conflictingTrips = await Trip.find({
+      status: { $in: ["SCHEDULED", "RUNNING"] },
+      "drivers.shift_start": { $exists: true },
+    }).select("drivers");
+    const busyDriverIds = new Set();
+    conflictingTrips.forEach((trip) => {
+      trip.drivers.forEach((driver) => {
+        const driverShiftStart = new Date(driver.shift_start);
+        const driverShiftEnd = new Date(driver.shift_end);
+        const hasConflict =
+          (shiftStartDate >= driverShiftStart && shiftStartDate < driverShiftEnd) ||
+          (shiftEndDate > driverShiftStart && shiftEndDate <= driverShiftEnd) ||
+          (shiftStartDate <= driverShiftStart && shiftEndDate >= driverShiftEnd);
+
+        if (hasConflict) {
+          busyDriverIds.add(driver.driver_id.toString());
+        }
+      });
+    });
+    const availableDrivers = drivers.filter(
+      (driver) => !busyDriverIds.has(driver._id.toString()),
+    );
+    return res.status(200).json(availableDrivers);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+// hàm search lơ xe 
+module.exports.searchAssistantDriver = async (req, res) => {
+  try {
+    const { keyword, departure_time, arrival_time } = req.query;
+
+    if (!keyword || keyword.trim().length < 2) {
+      return res.status(400).json({
+        message: "Keyword phải có ít nhất 2 ký tự",
+      });
+    }
+    const assistantRole = await Role.findOne({ name: "ASSISTANT" }).lean();
+    if (!assistantRole) {
+      return res.status(404).json({ message: "Không tìm thấy role ASSISTANT" });
+    }
+    const assistants = await User.find({
+      role: assistantRole._id,          
+      name: { $regex: keyword.trim(), $options: "i" },
+    })
+      .select("name email phone")
+      .lean();
+    if (!departure_time || !arrival_time) {
+      return res.status(200).json(assistants);
+    }
+    const departureDate = new Date(departure_time);
+    const arrivalDate = new Date(arrival_time);
+    const conflictingTrips = await Trip.find({
+      status: { $in: ["SCHEDULED", "RUNNING"] },
+      assistant_id: { $exists: true, $ne: null },
+    }).select("assistant_id departure_time arrival_time");
+    const busyAssistantIds = new Set();
+    conflictingTrips.forEach((trip) => {
+      const tripDeparture = new Date(trip.departure_time);
+      const tripArrival = new Date(trip.arrival_time);
+      const hasConflict =
+        (departureDate >= tripDeparture && departureDate < tripArrival) ||
+        (arrivalDate > tripDeparture && arrivalDate <= tripArrival) ||
+        (departureDate <= tripDeparture && arrivalDate >= tripArrival);
+      if (hasConflict && trip.assistant_id) {
+        busyAssistantIds.add(trip.assistant_id.toString());
+      }
+    });
+    const availableAssistants = assistants.filter(
+      (assistant) => !busyAssistantIds.has(assistant._id.toString()),
+    );
+    return res.status(200).json(availableAssistants);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+// Hàm tạo Trip;
+module.exports.createTrips = async (req,res) =>{
+  try {
+    const {route_id,bus_id,drivers,assistant_id,departure_time,arrival_time,scheduled_duration} = req.body;
+    if(!route_id || !bus_id || !drivers || !assistant_id || !departure_time || !arrival_time|| !scheduled_duration){
+      return res.status(400).json({message: "Các trường là bắt buộc"});
+    }
+    const route = await Route.findById(route_id);
+    if(!route){
+      return res.status(404).json({message: "Tuyến không tồn tại"});
+    };
+    const bus = await Bus.findById(bus_id);
+    if(!bus){
+      return res.status(404).json({message: "Xe không tồn tại"});
+    };
+    const assistant = await User.findById(assistant_id);
+      if(!assistant || assistant.role != "696ca255bc014a7a76f7caa8"){
+        return res.status(404).json({message: "Phụ xe không tồn tại"})
+      }
+    for(let d of drivers){
+      const driver = await User.findById(d.driver_id);
+      if(!driver || driver.role != "696ca255bc014a7a76f7caa7"){
+        return res.status(404).json({message: "Tài xế không tồn tại"})
+      }
+  if (
+    new Date(d.shift_start) < new Date(departure_time) ||
+    new Date(d.shift_end) > new Date(arrival_time)
+  ) {
+    return res.status(400).json({
+      message: `Ca làm của tài xế ${driver.name} không nằm trong thời gian chuyến.`,
+    });
+  }
+    };
+
+    const trip = new Trip({
+      route_id,
+      bus_id,
+      drivers,
+      assistant_id,
+      departure_time,
+      arrival_time,
+      scheduled_duration,
+    });
+    await trip.save();
+    return res.status(201).json({ message: "Tạo chuyến thành công" });
+  } catch (error) {
+    return res.status(500).json({message: error.message});
+  }
+}
+// Hàm tạo tài khoản nhân viên  
+module.exports.createStaffAccount = async (req,res) =>{
+  try {
+    const {name,phone,password,role} = req.body;
+    if(!name || !phone || !password || !role){
+      return res.status(404).json({message : "Các trường nhập là bắt buộc"})
+    }
+    const existedStaff = await User.findOne({phone});
+    if(existedStaff){
+      return res.status(400).json({message: "Số điện thoại đã được đăng kí"});
+    }
+    const newStaff = await User.create({
+      name,
+      phone,
+      password,
+      role,
+    });
+    await newStaff.save();
+    return res.status(201).json({message: "Tạo tài khoản nhân viên thành công"});
+  } catch (error) {
+    return res.status(500).json({message: error.message});
+  }
+};
+
+
+
+
