@@ -51,6 +51,11 @@ const TripSchema = new mongoose.Schema(
             required: true,
         },
 
+        // thời gian kết thúc nên có 
+        arrival_time: {
+            type: Date,
+            required: false,
+        },
         status: {
             type: String,
             enum: ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"],
