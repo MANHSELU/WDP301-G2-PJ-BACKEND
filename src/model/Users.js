@@ -14,7 +14,12 @@ const userSchema = new mongoose.Schema(
       unique: true,
       match: /^[0-9]{9,11}$/,
     },
-
+    email: {
+      type: String,
+      default: null,
+      sparse: true,
+      trim: true,
+    },
     password: {
       type: String,
       required: true,
