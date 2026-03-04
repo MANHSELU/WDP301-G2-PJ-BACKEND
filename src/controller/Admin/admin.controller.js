@@ -1887,7 +1887,15 @@ module.exports.createStaffAccount = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
-
+module.exports.searchStopsTimeTable = async (req, res) => {
+  try {
+    const { keyword } = req.query;
+    const searchStops = await Stops.find({ province: { $regex: keyword, $options: "i" } }).select("-name");
+    return res.status(200).json(searchStops);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
 
 
 
