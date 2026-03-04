@@ -1681,7 +1681,6 @@ module.exports.getAllBuses = async (req, res) => {
     const { departure_time, arrival_time } = req.query;
     if (!departure_time || !arrival_time) {
       const allBuses = await Bus.find()
-        .select("bus_type_id license_plate")
         .populate("bus_type_id", "name");
       return res.status(200).json(allBuses);
     }
