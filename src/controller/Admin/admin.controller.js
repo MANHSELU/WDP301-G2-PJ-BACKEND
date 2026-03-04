@@ -9,7 +9,7 @@ const StopLocation = require("../../model/StopLocation");
 const mongoose = require("mongoose");
 const {
   isValidObjectId,
-  // isAdmin, 
+  // isAdmin,
   isValidBusStatus,
   validateSeatLayout,
   isValidAccountStatus,
@@ -1466,7 +1466,7 @@ module.exports.deleteLocation = async (req, res) => {
       message: "Internal server error",
     });
   }
-}
+};
 
 //Hàm lấy tất cả cái loại xe bustype ra
 module.exports.getAllBusType = async (req, res) => {
@@ -1499,16 +1499,18 @@ module.exports.createBus = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
-// Hàm lấy tất cả các điểm stop 
+// Hàm lấy tất cả các điểm stop
 module.exports.searchStops = async (req, res) => {
   try {
     const { keyword } = req.query;
-    const searchStops = await Stops.find({ name: { $regex: keyword, $options: "i" } });
+    const searchStops = await Stops.find({
+      name: { $regex: keyword, $options: "i" },
+    });
     return res.status(200).json(searchStops);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
-}
+};
 // Hàm lấy ra những stop ở giữa điểm bắt đầu và kết thúc và sort theo order
 module.exports.getSuggestStops = async (req, res) => {
   try {
@@ -1545,29 +1547,29 @@ module.exports.getSuggestStops = async (req, res) => {
         $geoNear: {
           near: {
             type: "Point",
-            coordinates: startLocation
+            coordinates: startLocation,
           },
           distanceField: "distance",
           spherical: true,
           query: {
             "location.coordinates.1": { $gte: minLat, $lte: maxLat },
             "location.coordinates.0": { $gte: minLng, $lte: maxLng },
-            _id: { $nin: [start._id, end._id] }
-          }
-        }
+            _id: { $nin: [start._id, end._id] },
+          },
+        },
       },
       {
         $match: {
-          distance: { $lte: endDistance }
-        }
+          distance: { $lte: endDistance },
+        },
       },
       {
         $project: {
           name: 1,
           province: 1,
-          distance: 1
-        }
-      }
+          distance: 1,
+        },
+      },
     ]);
     return res.status(200).json({ start, recommendedStops: stops, end });
   } catch (error) {
@@ -1587,12 +1589,10 @@ module.exports.createRoutes = async (req, res) => {
     if (!start_id || !stop_id || !stops) {
       return res.status(404).json({ message: "Các trường nhập là bắt buộc" });
     }
-    const newRoute = await Route.create(
-      {
-        start_id,
-        stop_id,
-      },
-    );
+    const newRoute = await Route.create({
+      start_id,
+      stop_id,
+    });
     await newRoute.save(session);
     const newRoute_Stop = stops.map((s) => ({
       route_id: newRoute._id,
@@ -1615,12 +1615,98 @@ module.exports.createRoutes = async (req, res) => {
   }
 };
 
-module.exports.searchStopsTimeTable = async (req, res) => {
+module.exports.getAllBuses = async (req, res) => {
   try {
-    const { keyword } = req.query;
-    const searchStops = await Stops.find({ province: { $regex: keyword, $options: "i" } }).select("-name");
-    return res.status(200).json(searchStops);
+    const currentUser = res.locals.user;
+
+    const {
+      search = "",
+      status = "",
+      bus_type = "",
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    const { page: validPage, limit: validLimit } = validatePagination(
+      page,
+      limit
+    );
+    const skip = (validPage - 1) * validLimit;
+
+    const filter = {};
+
+    if (status && isValidBusStatus(status)) {
+      filter.status = status;
+    }
+
+    if (search && search.trim()) {
+      filter.license_plate = { $regex: search.trim(), $options: "i" };
+    }
+
+    // Tìm theo tên loại xe
+    if (bus_type && String(bus_type).trim()) {
+      const matchedTypes = await BusType.find({
+        name: { $regex: String(bus_type).trim(), $options: "i" },
+        isActive: true,
+      }).select("_id");
+      const typeIds = matchedTypes.map((t) => t._id);
+      if (typeIds.length > 0) {
+        filter.bus_type_id = { $in: typeIds };
+      } else {
+        // Không có type khớp -> trả về rỗng
+        return res.status(200).json({
+          success: true,
+          message: "Buses retrieved successfully",
+          data: {
+            buses: [],
+            pagination: {
+              currentPage: validPage,
+              totalPages: 0,
+              totalItems: 0,
+              itemsPerPage: validLimit,
+            },
+          },
+        });
+      }
+    }
+
+    console.log("🔍 Filter query:", filter);
+
+    const [buses, total] = await Promise.all([
+      Bus.find(filter)
+        .populate("bus_type_id", "name category description")
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(validLimit)
+        .lean(),
+      Bus.countDocuments(filter),
+    ]);
+
+    console.log(`✅ Found ${buses.length} buses out of ${total} total`);
+
+    const totalPages = Math.ceil(total / validLimit);
+
+    return res.status(200).json({
+      success: true,
+      message: "Buses retrieved successfully",
+      data: {
+        buses,
+        pagination: {
+          currentPage: validPage,
+          totalPages,
+          totalItems: total,
+          itemsPerPage: validLimit,
+          hasNextPage: validPage < totalPages,
+          hasPrevPage: validPage > 1,
+        },
+      },
+    });
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    console.error("❌ Error in getAllBuses:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
   }
-}
+};
