@@ -6,15 +6,14 @@ const StopSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: true, //Bến xe Đà Nẵng, Bến xe Mỹ Đình...
+      required: true, // Bến xe Đà Nẵng, Quảng Nam
       trim: true,
     },
     province: {
       type: String,
       required: true,
-      index: true,
+      trim: true,
     },
-
     location: {
       type: {
         type: String,

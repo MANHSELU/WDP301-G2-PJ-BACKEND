@@ -20,13 +20,10 @@ const RouteStopSchema = new mongoose.Schema(
             required: true, // thứ tự dừng
             min: 1,
         },
-        // // 
-        // estimated_time: {
-        //     type: String,
-        //     required: false, // VD: "08:30"
-        // },
-        // quảng nghãi  dn-hcm : ngày bth : bắt khách qn  , tết : qn : kh khách nữa
-        // đi update trạng thái của 1 điểm có được bắt khách hay không
+        estimated_time: {
+           type: String,
+            required: false, // VD: "08:30" // Thời gian ước tính từ điếm xuất phát đến điểm node 
+         },
         is_pickup: {
             type: Boolean,
             default: true, // có cho lên xe không

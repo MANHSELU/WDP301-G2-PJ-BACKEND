@@ -21,15 +21,25 @@ const TripSchema = new mongoose.Schema(
                     ref: "User",
                     required: true,
                 },
-                // thời điểm bắt đầu ca lái 
+                // thời điểm dự kiến bắt đầu ca lái 
                 shift_start: {
                     type: Date,
                     required: true,
                 },
-                // thời điểm kết thúc ca lái 
+                // thời điểm dự kiến kết thúc ca lái 
                 shift_end: {
                     type: Date,
                     required: true,
+                },
+                // thời điểm dự kiến bắt đầu ca lái 
+                actual_shift_start: {
+                    type: Date,
+                    default: null,
+                },
+                // thời điểm dự kiến kết thúc ca lái 
+                actual_shift_end: {
+                    type: Date,
+                    default: null,
                 },
                 status: {
                     type: String,
@@ -38,23 +48,40 @@ const TripSchema = new mongoose.Schema(
                 },
             }
         ],
-
-
         assistant_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: false,
         },
-        // thời gian khởi hành
+        // thời gian khởi hành dự kiến
         departure_time: {
             type: Date,
             required: true,
         },
-
-        // thời gian kết thúc nên có 
+        // Thời gian kết thúc dự kiến
         arrival_time: {
             type: Date,
-            required: false,
+            required: true,
+        },
+        //Thời gian bắt đầu thực tế
+        actual_departure_time: {
+            type: Date,
+            required: false
+        },
+        //Thời gian kết thúc thực tế
+        actual_arrival_time: {
+            type: Date,
+            required: false
+        },
+        //Khoảng cách dự kiến
+        scheduled_distance: {
+            type: Number,
+            required: false
+        },
+        //Thời gian dự kiến đơn vị phút
+        scheduled_duration: {
+            type: Number,
+            required: true
         },
         status: {
             type: String,

@@ -15,6 +15,11 @@ const RouteSchema = new mongoose.Schema(
             ref: "Stop",
             required: true,
         },
+
+        estimated_duration: {
+            type: Number,
+            required: false
+        },
         distance_km: {
             type: Number,
             required: false,
