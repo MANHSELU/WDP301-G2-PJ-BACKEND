@@ -21,9 +21,9 @@ const RouteStopSchema = new mongoose.Schema(
             min: 1,
         },
         estimated_time: {
-           type: String,
-            required: false, // VD: "08:30" // Thời gian ước tính từ điếm xuất phát đến điểm node 
-         },
+            type: Number,
+            required: false, // VD: "08 tiếng " // Thời gian ước tính từ điếm xuất phát đến điểm node 
+        },
         is_pickup: {
             type: Boolean,
             default: true, // có cho lên xe không

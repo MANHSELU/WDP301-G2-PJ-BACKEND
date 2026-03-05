@@ -1628,15 +1628,18 @@ module.exports.createRoutes = async (req, res) => {
 };
 // Hàm lấy vị trí Stop Location
 module.exports.getGeoOfStopLocation = async (req, res) => {
+  console.log("chạy vào lấy vị trí")
   try {
     const { location_name } = req.body;
     if (!location_name) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
+    console.log("1")
     const coordinates = await geocodeVietnamese(location_name);
     if (!coordinates) {
       return res.status(404).json({ message: "Không tìm thấy địa điểm" });
     }
+    console.log("2")
     return res.status(200).json({ coordinates });
   } catch (error) {
     return res.status(500).json({ message: error.message });

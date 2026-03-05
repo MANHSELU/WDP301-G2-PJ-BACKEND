@@ -4,6 +4,7 @@ async function geocodeVietnamese(placeName) {
   const encoded = encodeURIComponent(placeName);
 
   const url = `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1&countrycodes=vn`;
+  console.log("url là: ", url)
 
   const res = await axios.get(url, {
     headers: {
