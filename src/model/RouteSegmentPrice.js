@@ -14,7 +14,6 @@ const RouteSegmentPriceSchema = new mongoose.Schema(
             ref: "RouteStop",
             required: true,
         },
-
         end_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "RouteStop",
