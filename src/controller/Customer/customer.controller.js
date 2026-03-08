@@ -723,9 +723,18 @@ module.exports.viewTripBus = async (req, res) => {
         select: "-seat_layout"
       })
       .select("-drivers -assistant_id")
+    const routeStop = await RouteStop.find({
+      route_id: route_id,
+
+      is_pickup: true
+    }).populate("stop_id")
+    const arr = node.map(trip => ({
+      ...trip.toObject(),
+      time: routeStop
+    }))
     return res.status(201).json({
       "message": "Success",
-      data: node
+      data: arr
     })
   } catch (err) {
     console.log("lỗi trong chương trình là : ", err)
@@ -771,6 +780,7 @@ module.exports.diagramBus = async (req, res) => {
   }
 }
 module.exports.endPoint = async (req, res) => {
+  console.log("chạy vào endpoint")
   try {
     const { start_id, route_id, bus_type_id } = req.body
     console.log("start_id và router id là: ", start_id, route_id, bus_type_id)
@@ -860,6 +870,12 @@ module.exports.locationPoint = async (req, res) => {
         is_active: true
       })
       const arr = []
+      const location = {
+        location_name: stop_start.name,
+        is_active: true,
+        status: true
+      }
+      arr.push(location)
       console.log("location là : ", locations)
       for (const location of locations) {
         // chỉ check kinh độ 
@@ -879,6 +895,7 @@ module.exports.locationPoint = async (req, res) => {
           }
         }
       }
+      console.log("arr khi chọn được điểm là : ", arr)
       return res.status(200).json({
         message: "Success",
         data: arr
@@ -919,6 +936,12 @@ module.exports.locationPoint = async (req, res) => {
       })
       console.log("location là : ", locations)
       const arr = []
+      const location = {
+        location_name: stop_end.name,
+        is_active: true,
+        status: true
+      }
+      arr.push(location)
       for (const location of locations) {
         // chỉ check kinh độ 
         const lat = location.location.coordinates[1] // độ của đểm chi tiết vị trí
