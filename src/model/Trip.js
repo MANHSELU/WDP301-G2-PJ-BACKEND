@@ -31,7 +31,7 @@ const TripSchema = new mongoose.Schema(
                     type: Date,
                     required: true,
                 },
-                  // thời điểm dự kiến bắt đầu ca lái 
+                // thời điểm dự kiến bắt đầu ca lái 
                 actual_shift_start: {
                     type: Date,
                     default: null,
@@ -43,7 +43,7 @@ const TripSchema = new mongoose.Schema(
                 },
                 status: {
                     type: String,
-                    enum: ["PENDING","RUNNING", "DONE"],
+                    enum: ["PENDING", "RUNNING", "DONE"],
                     default: "PENDING",
                 },
             }
@@ -60,7 +60,7 @@ const TripSchema = new mongoose.Schema(
         },
         // Thời gian kết thúc dự kiến
         arrival_time: {
-            type : Date,
+            type: Date,
             required: true,
         },
         //Thời gian bắt đầu thực tế

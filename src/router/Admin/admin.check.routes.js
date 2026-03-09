@@ -28,12 +28,12 @@ router.delete("/locations/:id", adminController.deleteLocation);
 router.post("/buses", adminController.createBus);
 router.post("/routes", adminController.createRoutes);
 router.get("/recommendStops", adminController.getSuggestStops);
-router.get("/searchStop", adminController.searchStops);
+router.get("/getAllStops", adminController.getAllStops);
 router.post("/getGeoStopLocation", adminController.getGeoOfStopLocation);
 router.post("/createStopLocation", adminController.createStopLocation);
 router.get("/getRoutes", adminController.getAllRoutes);
 router.get("/getBuses", adminController.getAllBuses);
-router.get("/searchDrivers", adminController.searchDrivers);
+router.get("/getAvailableDrivers", adminController.getAvailableDrivers);
 router.get("/searchAssistant", adminController.searchAssistantDriver);
 router.post("/trips", adminController.createTrips);
 

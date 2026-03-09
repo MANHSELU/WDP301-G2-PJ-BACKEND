@@ -1489,7 +1489,7 @@ module.exports.createBus = async (req, res) => {
     }
     const bus = await Bus.findOne({ license_plate });
     if (bus) {
-      return res.status(409).json({ message: "Biến số xe là bắt buộc" });
+      return res.status(409).json({ message: "Xe đã tồn tại" });
     }
     const newBus = await Bus.create({
       license_plate,
@@ -1503,10 +1503,9 @@ module.exports.createBus = async (req, res) => {
   }
 };
 // Hàm lấy tất cả các điểm stop 
-module.exports.searchStops = async (req, res) => {
+module.exports.getAllStops = async (req, res) => {
   try {
-    const { keyword } = req.query;
-    const searchStops = await Stops.find({ name: { $regex: keyword, $options: "i" } });
+    const searchStops = await Stops.find().select("name province");
     return res.status(200).json(searchStops);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -1713,57 +1712,69 @@ module.exports.createStopLocation = async (req,res) =>{
     return res.status(500).json({ message: error.message });
   }
 };
+
 // Hàm lấy tài xế đã check conflict lịch
-module.exports.searchDrivers = async (req, res) => {
+module.exports.getAvailableDrivers = async (req, res) => {
   try {
-    const { keyword, shift_start, shift_end } = req.query;
-    if (!keyword || keyword.trim().length < 2) {
+    const { shift_start, shift_end } = req.query;
+    if (!shift_start || !shift_end) {
       return res.status(400).json({
-        message: "Keyword phải có ít nhất 2 ký tự",
+        message: "Phải truyền shift_start và shift_end",
       });
-    }
+    };
+    const start = new Date(shift_start);
+    const end = new Date(shift_end);
+    if (start >= end) {
+      return res.status(400).json({
+        message: "shift_end phải lớn hơn shift_start",
+      });
+    };
     const driverRole = await Role.findOne({ name: "DRIVER" }).lean();
     if (!driverRole) {
-      return res.status(404).json({ message: "Không tìm thấy role DRIVER" });
-    }
-    const drivers = await User.find({
-      role: driverRole._id,           
-      name: { $regex: keyword.trim(), $options: "i" },
-    })
-      .select("name email phone")
-      .lean();
-    if (!shift_start || !shift_end) {
-      return res.status(200).json(drivers);
-    }
-    const shiftStartDate = new Date(shift_start);
-    const shiftEndDate = new Date(shift_end);
-    const conflictingTrips = await Trip.find({
+      return res.status(404).json({
+        message: "Không tìm thấy role DRIVER",
+      });
+    };
+    const busyTrips = await Trip.find({
       status: { $in: ["SCHEDULED", "RUNNING"] },
-      "drivers.shift_start": { $exists: true },
+      drivers: {
+        $elemMatch: {
+          $or: [
+            {
+              actual_shift_start: { $lt: end },
+              actual_shift_end: { $gt: start },
+            },
+            {
+              actual_shift_start: null,
+              shift_start: { $lt: end },
+              shift_end: { $gt: start },
+            },
+          ],
+        },
+      },
     }).select("drivers");
     const busyDriverIds = new Set();
-    conflictingTrips.forEach((trip) => {
-      trip.drivers.forEach((driver) => {
-        const driverShiftStart = new Date(driver.shift_start);
-        const driverShiftEnd = new Date(driver.shift_end);
-        const hasConflict =
-          (shiftStartDate >= driverShiftStart && shiftStartDate < driverShiftEnd) ||
-          (shiftEndDate > driverShiftStart && shiftEndDate <= driverShiftEnd) ||
-          (shiftStartDate <= driverShiftStart && shiftEndDate >= driverShiftEnd);
-
-        if (hasConflict) {
-          busyDriverIds.add(driver.driver_id.toString());
+    busyTrips.forEach((trip) => {
+      trip.drivers.forEach((d) => {
+        const realStart = d.actual_shift_start || d.shift_start;
+        const realEnd = d.actual_shift_end || d.shift_end;
+        if (realStart < end && realEnd > start) {
+          busyDriverIds.add(d.driver_id.toString());
         }
       });
     });
-    const availableDrivers = drivers.filter(
-      (driver) => !busyDriverIds.has(driver._id.toString()),
-    );
+    const availableDrivers = await User.find({
+      role: driverRole._id,
+      _id: { $nin: Array.from(busyDriverIds) },
+    })
+      .select("name email phone")
+      .lean();
     return res.status(200).json(availableDrivers);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
+
 // hàm search lơ xe 
 module.exports.searchAssistantDriver = async (req, res) => {
   try {
