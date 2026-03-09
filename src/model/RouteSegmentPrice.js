@@ -42,16 +42,6 @@ const RouteSegmentPriceSchema = new mongoose.Schema(
     }
 );
 
-// ❗ Không cho trùng giá cùng 1 đoạn + 1 loại xe
-RouteSegmentPriceSchema.index(
-    {
-        route_id: 1,
-        pickup_stop_id: 1,
-        dropoff_stop_id: 1,
-        bus_type_id: 1,
-    },
-    { unique: true }
-);
 
 module.exports = mongoose.model(
     "RouteSegmentPrice",

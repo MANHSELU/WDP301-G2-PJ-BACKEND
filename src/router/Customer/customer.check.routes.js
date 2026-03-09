@@ -9,4 +9,7 @@ routerUserCheck.put(
   upload.single("avatar"),
   userController.updateProfile
 );
+routerUserCheck.post("/create", userController.createBooking);
+routerUserCheck.post("/getOrderHistory", userController.getOrderHistory)
+
 module.exports = routerUserCheck;

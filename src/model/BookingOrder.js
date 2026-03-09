@@ -32,7 +32,22 @@ const BookingOrderSchema = new mongoose.Schema(
             enum: ["CREATED", "PAID", "CANCELLED"],
             default: "CREATED",
         },
-
+        seat_labels: {
+            type: [String],
+            default: [],
+        },
+        passenger_name: {
+            type: String,
+            required: true,
+        },
+        passenger_phone: {
+            type: String,
+            required: true,
+        },
+        passenger_email: {
+            type: String,
+            default: null,
+        },
         total_price: {
             type: Number,
             required: true,

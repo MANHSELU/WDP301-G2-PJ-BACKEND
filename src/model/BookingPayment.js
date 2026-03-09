@@ -6,7 +6,6 @@ const BookingPaymentSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "BookingOrder",
             required: true,
-            index: true,
         },
 
         payment_method: {
