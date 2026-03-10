@@ -38,4 +38,13 @@ routerUserCheck.get(
     "/trip/:id",
     driverController.tripDetail
 );
+routerUserCheck.get(
+    "/getAllTripsForDrivers",
+    driverController.getAllTripsForDrivers
+);
+routerUserCheck.get(
+    "/shifts/stats",
+    driverController.getDriverStats
+);
+
 module.exports = routerUserCheck;

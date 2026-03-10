@@ -5,6 +5,7 @@ const checkClient = require("./../middleware/auth")
 const driverCheck = require("./../router/Driver/driver.check.routes")
 const adminCheck = require("./Admin/admin.check.routes");
 const adminNotCheck = require("./Admin/admin.notcheck.routes");
+const assistantCheck = require("./Assistant Driver/assistantDriver.check.routes.js")
 module.exports = [
   {
     prefix: "/api/customer/notcheck",
@@ -18,6 +19,15 @@ module.exports = [
         // checkClient.checkRole("696cd1f7cd7d3a094f45fd4b")
       ],
     router: clientcheck
+  },
+  {
+    prefix: "/api/assistant/check",
+    middlewares:
+      [
+        checkClient.checkaccount,
+        // checkClient.checkRole("696cd1f7cd7d3a094f45fd4b")
+      ],
+    router: assistantCheck
   },
   {
     prefix: "/api/driver/notcheck",
