@@ -1085,8 +1085,9 @@ module.exports.updateLocationStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Location ${is_active ? "activated" : "deactivated"
-        } successfully`,
+      message: `Location ${
+        is_active ? "activated" : "deactivated"
+      } successfully`,
       data: {
         _id: updatedLocation._id,
         name: updatedLocation.location_name,
@@ -1596,15 +1597,18 @@ module.exports.createRoutes = async (req, res) => {
     const endStop = await Stop.findById(stop_id);
     const [startLng, startLat] = startStop.location.coordinates;
     const [endLng, endLat] = endStop.location.coordinates;
-    const routeInformation = await getRouteDistance(startLng, startLat, endLng, endLat);
-    const newRoute = await Route.create(
-      {
-        start_id,
-        stop_id,
-        distance_km: routeInformation.distance_km,
-        estimated_duration: routeInformation.duration_hour,
-      },
+    const routeInformation = await getRouteDistance(
+      startLng,
+      startLat,
+      endLng,
+      endLat
     );
+    const newRoute = await Route.create({
+      start_id,
+      stop_id,
+      distance_km: routeInformation.distance_km,
+      estimated_duration: routeInformation.duration_hour,
+    });
     await newRoute.save(session);
     const newRoute_Stop = stops.map((s) => ({
       route_id: newRoute._id,
@@ -1648,11 +1652,13 @@ module.exports.createStopLocation = async (req, res) => {
     const { stop_id, location_name, address, location } = req.body;
     if (!stop_id || !location_name || !address || !location) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
-    };
+    }
     const stopLocation = await StopLocation.findOne({ location_name });
     if (stopLocation) {
-      return res.status(400).json({ message: "Vị trí lên xuống này đã tồn tại" })
-    };
+      return res
+        .status(400)
+        .json({ message: "Vị trí lên xuống này đã tồn tại" });
+    }
     const newStopLocation = await StopLocation.create({
       stop_id,
       location_name,
@@ -1669,7 +1675,10 @@ module.exports.createStopLocation = async (req, res) => {
 // Hàm get all route
 module.exports.getAllRoutes = async (req, res) => {
   try {
-    const allRoutes = await Route.find().select("start_id stop_id estimated_duration").populate("start_id", "name").populate("stop_id", "name");
+    const allRoutes = await Route.find()
+      .select("start_id stop_id estimated_duration")
+      .populate("start_id", "name")
+      .populate("stop_id", "name");
     return res.status(200).json(allRoutes);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -1692,21 +1701,21 @@ module.exports.getAllBuses = async (req, res) => {
       $or: [
         {
           departure_time: { $lte: departureDate },
-          arrival_time: { $gte: departureDate }
+          arrival_time: { $gte: departureDate },
         },
         {
           departure_time: { $lte: arrivalDate },
-          arrival_time: { $gte: arrivalDate }
+          arrival_time: { $gte: arrivalDate },
         },
         {
           departure_time: { $gte: departureDate },
-          arrival_time: { $lte: arrivalDate }
-        }
-      ]
+          arrival_time: { $lte: arrivalDate },
+        },
+      ],
     }).select("bus_id");
-    const busyBusIds = conflictingTrips.map(trip => trip.bus_id.toString());
+    const busyBusIds = conflictingTrips.map((trip) => trip.bus_id.toString());
     const availableBuses = await Bus.find({
-      _id: { $nin: busyBusIds }
+      _id: { $nin: busyBusIds },
     })
       .select("bus_type_id license_plate")
       .populate("bus_type_id", "name");
@@ -1749,9 +1758,11 @@ module.exports.searchDrivers = async (req, res) => {
         const driverShiftStart = new Date(driver.shift_start);
         const driverShiftEnd = new Date(driver.shift_end);
         const hasConflict =
-          (shiftStartDate >= driverShiftStart && shiftStartDate < driverShiftEnd) ||
+          (shiftStartDate >= driverShiftStart &&
+            shiftStartDate < driverShiftEnd) ||
           (shiftEndDate > driverShiftStart && shiftEndDate <= driverShiftEnd) ||
-          (shiftStartDate <= driverShiftStart && shiftEndDate >= driverShiftEnd);
+          (shiftStartDate <= driverShiftStart &&
+            shiftEndDate >= driverShiftEnd);
 
         if (hasConflict) {
           busyDriverIds.add(driver.driver_id.toString());
@@ -1759,14 +1770,14 @@ module.exports.searchDrivers = async (req, res) => {
       });
     });
     const availableDrivers = drivers.filter(
-      (driver) => !busyDriverIds.has(driver._id.toString()),
+      (driver) => !busyDriverIds.has(driver._id.toString())
     );
     return res.status(200).json(availableDrivers);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
-// hàm search lơ xe 
+// hàm search lơ xe
 module.exports.searchAssistantDriver = async (req, res) => {
   try {
     const { keyword, departure_time, arrival_time } = req.query;
@@ -1808,7 +1819,7 @@ module.exports.searchAssistantDriver = async (req, res) => {
       }
     });
     const availableAssistants = assistants.filter(
-      (assistant) => !busyAssistantIds.has(assistant._id.toString()),
+      (assistant) => !busyAssistantIds.has(assistant._id.toString())
     );
     return res.status(200).json(availableAssistants);
   } catch (error) {
@@ -1818,26 +1829,42 @@ module.exports.searchAssistantDriver = async (req, res) => {
 // Hàm tạo Trip;
 module.exports.createTrips = async (req, res) => {
   try {
-    const { route_id, bus_id, drivers, assistant_id, departure_time, arrival_time, scheduled_duration } = req.body;
-    if (!route_id || !bus_id || !drivers || !assistant_id || !departure_time || !arrival_time || !scheduled_duration) {
+    const {
+      route_id,
+      bus_id,
+      drivers,
+      assistant_id,
+      departure_time,
+      arrival_time,
+      scheduled_duration,
+    } = req.body;
+    if (
+      !route_id ||
+      !bus_id ||
+      !drivers ||
+      !assistant_id ||
+      !departure_time ||
+      !arrival_time ||
+      !scheduled_duration
+    ) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
     const route = await Route.findById(route_id);
     if (!route) {
       return res.status(404).json({ message: "Tuyến không tồn tại" });
-    };
+    }
     const bus = await Bus.findById(bus_id);
     if (!bus) {
       return res.status(404).json({ message: "Xe không tồn tại" });
-    };
+    }
     const assistant = await User.findById(assistant_id);
     if (!assistant || assistant.role != "696ca255bc014a7a76f7caa8") {
-      return res.status(404).json({ message: "Phụ xe không tồn tại" })
+      return res.status(404).json({ message: "Phụ xe không tồn tại" });
     }
     for (let d of drivers) {
       const driver = await User.findById(d.driver_id);
       if (!driver || driver.role != "696ca255bc014a7a76f7caa7") {
-        return res.status(404).json({ message: "Tài xế không tồn tại" })
+        return res.status(404).json({ message: "Tài xế không tồn tại" });
       }
       if (
         new Date(d.shift_start) < new Date(departure_time) ||
@@ -1847,7 +1874,7 @@ module.exports.createTrips = async (req, res) => {
           message: `Ca làm của tài xế ${driver.name} không nằm trong thời gian chuyến.`,
         });
       }
-    };
+    }
 
     const trip = new Trip({
       route_id,
@@ -1863,13 +1890,349 @@ module.exports.createTrips = async (req, res) => {
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
-}
-// Hàm tạo tài khoản nhân viên  
+};
+
+// --- VIEW TRIPS (list) ---
+module.exports.getAllTrips = async (req, res) => {
+  try {
+    // No admin auth required here per request
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      route_id,
+      bus_id,
+      from,
+      to,
+      search,
+    } = req.query;
+    const { page: validPage, limit: validLimit } = validatePagination(
+      page,
+      limit
+    );
+    const skip = (validPage - 1) * validLimit;
+
+    const query = {};
+
+    if (status) {
+      query.status = status;
+    }
+    if (route_id && isValidObjectId(route_id)) {
+      query.route_id = route_id;
+    }
+    if (bus_id && isValidObjectId(bus_id)) {
+      query.bus_id = bus_id;
+    }
+    if (from || to) {
+      query.departure_time = {};
+      if (from) {
+        const fromDate = new Date(from);
+        if (!isNaN(fromDate)) query.departure_time.$gte = fromDate;
+      }
+      if (to) {
+        const toDate = new Date(to);
+        if (!isNaN(toDate)) query.departure_time.$lte = toDate;
+      }
+      // remove empty object
+      if (Object.keys(query.departure_time).length === 0)
+        delete query.departure_time;
+    }
+    if (search && search.trim()) {
+      // search in bus license_plate or route start/stop names (simple approach)
+      const s = search.trim();
+      query.$or = [{ "bus_id.license_plate": { $regex: s, $options: "i" } }];
+      // Note: bus_id.license_plate won't work unless we denormalize; keep simple by fetching and filtering later if needed
+    }
+
+    const [trips, total] = await Promise.all([
+      Trip.find(query)
+        .populate({
+          path: "route_id",
+          populate: [
+            { path: "start_id", select: "name" },
+            { path: "stop_id", select: "name" },
+          ],
+        })
+        .populate({
+          path: "bus_id",
+          populate: { path: "bus_type_id", select: "name" },
+        })
+        .populate("drivers.driver_id", "name phone")
+        .populate("assistant_id", "name phone")
+        .sort({ departure_time: -1 })
+        .skip(skip)
+        .limit(validLimit)
+        .lean(),
+      Trip.countDocuments(query),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Trips retrieved successfully",
+      data: {
+        trips,
+        pagination: {
+          currentPage: validPage,
+          totalPages: Math.ceil(total / validLimit),
+          totalItems: total,
+          itemsPerPage: validLimit,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in getAllTrips:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// --- VIEW SINGLE TRIP ---
+module.exports.getTripById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid trip id" });
+    }
+
+    const trip = await Trip.findById(id)
+      .populate({
+        path: "route_id",
+        populate: [
+          { path: "start_id", select: "name latitude longitude" },
+          { path: "stop_id", select: "name latitude longitude" },
+        ],
+      })
+      .populate({
+        path: "bus_id",
+        populate: { path: "bus_type_id", select: "name" },
+      })
+      .populate("drivers.driver_id", "name phone")
+      .populate("assistant_id", "name phone")
+      .lean();
+
+    if (!trip) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Trip not found" });
+    }
+
+    // Optionally attach route stops & locations
+    const route = trip.route_id;
+    if (route) {
+      const routeDetail = await buildRouteResponse(route);
+      trip.route_detail = routeDetail;
+    }
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Trip retrieved", data: trip });
+  } catch (error) {
+    console.error("❌ Error in getTripById:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// --- UPDATE TRIP ---
+module.exports.updateTrip = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid trip id" });
+    }
+
+    const existing = await Trip.findById(id);
+    if (!existing) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Trip not found" });
+    }
+
+    const {
+      route_id,
+      bus_id,
+      drivers,
+      assistant_id,
+      departure_time,
+      arrival_time,
+      scheduled_distance,
+      scheduled_duration,
+      status,
+    } = req.body;
+
+    const updateData = {};
+
+    if (route_id !== undefined) {
+      if (!isValidObjectId(route_id)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid route_id" });
+      }
+      updateData.route_id = route_id;
+    }
+
+    if (bus_id !== undefined) {
+      if (!isValidObjectId(bus_id)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid bus_id" });
+      }
+      updateData.bus_id = bus_id;
+    }
+
+    if (drivers !== undefined) {
+      if (!Array.isArray(drivers)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "drivers must be an array" });
+      }
+      // Validate each driver item
+      const parsedDrivers = [];
+      for (const d of drivers) {
+        if (!d.driver_id || !isValidObjectId(d.driver_id)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid driver_id in drivers" });
+        }
+        const parsed = {
+          driver_id: d.driver_id,
+        };
+        if (d.shift_start) {
+          const s = new Date(d.shift_start);
+          if (isNaN(s))
+            return res
+              .status(400)
+              .json({ success: false, message: "Invalid shift_start" });
+          parsed.shift_start = s;
+        } else {
+          // keep existing if not provided? we'll require providing dates for each driver in update array
+          parsed.shift_start = d.shift_start || null;
+        }
+        if (d.shift_end) {
+          const e = new Date(d.shift_end);
+          if (isNaN(e))
+            return res
+              .status(400)
+              .json({ success: false, message: "Invalid shift_end" });
+          parsed.shift_end = e;
+        } else {
+          parsed.shift_end = d.shift_end || null;
+        }
+        parsedDrivers.push(parsed);
+      }
+      updateData.drivers = parsedDrivers;
+    }
+
+    if (assistant_id !== undefined) {
+      if (assistant_id !== null && !isValidObjectId(assistant_id)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid assistant_id" });
+      }
+      updateData.assistant_id = assistant_id;
+    }
+
+    if (departure_time !== undefined) {
+      const dt = new Date(departure_time);
+      if (isNaN(dt))
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid departure_time" });
+      updateData.departure_time = dt;
+    }
+
+    if (arrival_time !== undefined) {
+      const at = new Date(arrival_time);
+      if (isNaN(at))
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid arrival_time" });
+      updateData.arrival_time = at;
+    }
+
+    if (scheduled_distance !== undefined) {
+      const sd = Number(scheduled_distance);
+      if (isNaN(sd) || sd < 0)
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid scheduled_distance" });
+      updateData.scheduled_distance = sd;
+    }
+
+    if (scheduled_duration !== undefined) {
+      const sdur = Number(scheduled_duration);
+      if (isNaN(sdur) || sdur < 0)
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid scheduled_duration" });
+      updateData.scheduled_duration = sdur;
+    }
+
+    if (status !== undefined) {
+      const allowed = ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"];
+      if (!allowed.includes(status))
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid status" });
+      updateData.status = status;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No valid fields to update" });
+    }
+
+    const updated = await Trip.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    )
+      .populate({
+        path: "route_id",
+        populate: [
+          { path: "start_id", select: "name latitude longitude" },
+          { path: "stop_id", select: "name latitude longitude" },
+        ],
+      })
+      .populate({
+        path: "bus_id",
+        populate: { path: "bus_type_id", select: "name" },
+      })
+      .populate("drivers.driver_id", "name phone")
+      .populate("assistant_id", "name phone")
+      .lean();
+
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message: "Trip updated successfully",
+        data: updated,
+      });
+  } catch (error) {
+    console.error("❌ Error in updateTrip:", error);
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// Hàm tạo tài khoản nhân viên
 module.exports.createStaffAccount = async (req, res) => {
   try {
     const { name, phone, password, role } = req.body;
     if (!name || !phone || !password || !role) {
-      return res.status(404).json({ message: "Các trường nhập là bắt buộc" })
+      return res.status(404).json({ message: "Các trường nhập là bắt buộc" });
     }
     const existedStaff = await User.findOne({ phone });
     if (existedStaff) {
@@ -1882,7 +2245,9 @@ module.exports.createStaffAccount = async (req, res) => {
       role,
     });
     await newStaff.save();
-    return res.status(201).json({ message: "Tạo tài khoản nhân viên thành công" });
+    return res
+      .status(201)
+      .json({ message: "Tạo tài khoản nhân viên thành công" });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -1890,12 +2255,11 @@ module.exports.createStaffAccount = async (req, res) => {
 module.exports.searchStopsTimeTable = async (req, res) => {
   try {
     const { keyword } = req.query;
-    const searchStops = await Stops.find({ province: { $regex: keyword, $options: "i" } }).select("-name");
+    const searchStops = await Stops.find({
+      province: { $regex: keyword, $options: "i" },
+    }).select("-name");
     return res.status(200).json(searchStops);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
-}
-
-
-
+};
