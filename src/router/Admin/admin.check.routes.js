@@ -20,7 +20,23 @@ router.patch(
   "/routes/:routeId/stops/:stopId/pickup",
   adminController.updateStopPickupStatus
 );
+router.patch(
+  "/routes/:routeId/stops/:stopId/pickup",
+  adminController.updateStopPickupStatus
+);
 router.post("/routes/:routeId/stops", adminController.addStopToRoute);
+router.delete(
+  "/routes/:routeId/stops/:stopId",
+  adminController.removeStopFromRoute
+);
+router.put(
+  "/routes/:routeId/stops/:stopId/order",
+  adminController.updateRouteStopOrder
+);
+router.post(
+  "/routes/:routeId/stops/:stopId/locations",
+  adminController.addLocationToStop
+);
 router.delete(
   "/routes/:routeId/stops/:stopId",
   adminController.removeStopFromRoute

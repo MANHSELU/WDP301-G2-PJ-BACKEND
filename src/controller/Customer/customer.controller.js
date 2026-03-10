@@ -9,6 +9,10 @@ const Stop = require("../../model/Stops");
 const RouteStop = require("../../model/route_stops");
 const StopLocation = require("../../model/StopLocation");
 const Trip = require("./../../model/Trip")
+const RouteSegmentPrices = require("./../../model/RouteSegmentPrice");
+const mongoose = require("mongoose");
+const BookingOrder = require("./../../model/BookingOrder")
+const BookingPayment = require("./../../model/BookingPayment")
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -571,14 +575,15 @@ module.exports.searchRoutes = async (req, res) => {
 module.exports.getSearch = async (req, res) => {
   try {
     console.log("chạy vào search")
-    const { nodeId_start, nodeId_end } = req.body;
+    const { nodeId_start, nodeId_end, date } = req.body;
+    console.log("date là: ", date)
     console.log("nodeid start là : ", nodeId_start)
     if (!nodeId_start || !nodeId_end) {
       return res.status(400).json({
         message: "Thiếu nodeId_start hoặc nodeId_end",
       });
     }
-
+    console.log("1")
     // 1️⃣ Tìm tất cả routeStop của start node
     const startStops = await RouteStop.find({
       stop_id: nodeId_start,
@@ -602,7 +607,15 @@ module.exports.getSearch = async (req, res) => {
         results.push(endStop);
       }
     }
+    // check date 
+    const startOfDay = new Date(date);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+    console.log(" ngày bắt đầu và kết thúc là : ", startOfDay, endOfDay)
     const arr = []
+    const checkList = []
     for (const route of results) {
       const node = await Route.findOne({
         _id: route.route_id,
@@ -617,7 +630,27 @@ module.exports.getSearch = async (req, res) => {
           select: "province"
         })
         ;
+      console.log("3")
 
+      const checknode = await Trip.findOne({
+        route_id: route.route_id,
+        departure_time: {
+          $gte: startOfDay,
+          $lte: endOfDay,
+        }
+      })
+      console.log("nodecheck là: ", checknode)
+      if (!checknode) {
+        // chuyển qua vòng for tiếp theo
+        continue
+      }
+      checkList.push(checknode)
+      // if (!checknode) {
+      //   console.log("rơi vào không có ")
+      //   return res.json({
+      //     arr
+      //   })
+      // }
       // const node = await Trip.findOne({
       //   route_id: route.route_id,
       // })
@@ -642,13 +675,15 @@ module.exports.getSearch = async (req, res) => {
       //     select: "-seat_layout"
       //   })
       //   .select("-drivers -assistant_id")
+      console.log("4")
       if (node) {
         arr.push(node)
       }
     }
-
+    if (checkList.length == 0) {
+      return res.json([]);
+    }
     return res.json(arr);
-
   } catch (err) {
     console.log("Lỗi của chương trình là:", err);
     return res.status(500).json({
@@ -667,6 +702,7 @@ module.exports.viewTripBus = async (req, res) => {
     }
     const node = await Trip.find({
       route_id: route_id,
+      status: "SCHEDULED"
     })
       .populate({
         path: "route_id",
@@ -689,9 +725,18 @@ module.exports.viewTripBus = async (req, res) => {
         select: "-seat_layout"
       })
       .select("-drivers -assistant_id")
+    const routeStop = await RouteStop.find({
+      route_id: route_id,
+
+      is_pickup: true
+    }).populate("stop_id")
+    const arr = node.map(trip => ({
+      ...trip.toObject(),
+      time: routeStop
+    }))
     return res.status(201).json({
       "message": "Success",
-      data: node
+      data: arr
     })
   } catch (err) {
     console.log("lỗi trong chương trình là : ", err)
@@ -700,3 +745,586 @@ module.exports.viewTripBus = async (req, res) => {
     })
   }
 }
+module.exports.diagramBus = async (req, res) => {
+  try {
+    const { route_id } = req.body
+    if (!route_id) {
+      return res.status(404).json({
+        message: "Not found"
+      })
+    }
+    const trip = await Trip.findOne({
+      route_id: route_id
+    })
+      .populate({
+        path: "bus_id",
+        populate: {
+          path: "bus_type_id"
+        }
+      })
+      .populate({
+        path: "route_id",
+        populate: [
+          { path: "start_id" },
+          { path: "stop_id" }
+        ]
+      })
+    return res.status(200).json({
+      mesage: "Success",
+      data: trip
+    })
+
+  } catch (err) {
+    console.log("lỗi trong chương trình là : ", err)
+    return res.status(404).json({
+      message: "Not found"
+    })
+  }
+}
+module.exports.endPoint = async (req, res) => {
+  console.log("chạy vào endpoint")
+  try {
+    const { start_id, route_id, bus_type_id } = req.body
+    console.log("start_id và router id là: ", start_id, route_id, bus_type_id)
+    if (!start_id || !route_id) {
+      return res.status(404).json({
+        message: "Not found"
+      })
+    }
+    const routeSegmentprices = await RouteSegmentPrices.find({
+      start_id: start_id,
+      route_id: route_id,
+      bus_type_id: bus_type_id
+      // is_active: true
+    })
+    console.log("routeSegmentprices là : ", routeSegmentprices)
+    const arr = []
+    for (const router of routeSegmentprices) {
+      const routeStop = await RouteStop.findOne({
+        stop_id: router.end_id,
+        is_pickup: true
+      })
+        .populate("stop_id")
+      if (routeStop) {
+        arr.push(routeStop)
+      }
+    }
+    return res.status(201).json({
+      message: "Success",
+      data: arr
+    })
+  } catch (err) {
+    console.log("lỗi trong chương trình trên là : ", err)
+    return res.status(500).json({
+      message: "Server Error"
+    })
+  }
+}
+module.exports.startPoint = async (req, res) => {
+  try {
+    const { route_id } = req.body;
+    const routerStop = await RouteStop.find({
+      route_id: route_id,
+      is_pickup: true
+    }).populate("stop_id")
+    return res.status(200).json({
+      message: "Success",
+      data: routerStop
+    })
+  } catch (err) {
+    console.log("lỗi trong chương trình là: ", err)
+    return res.status(500).json({
+      message: "Server Error",
+    })
+  }
+}
+module.exports.locationPoint = async (req, res) => {
+  try {
+    const { stop_id, route_id } = req.body
+    console.log("stop_id và route_id là: ", stop_id, " va", route_id)
+    const routestops = await RouteStop.findOne({
+      route_id: route_id,
+      stop_id: stop_id,
+      is_pickup: true
+    })
+    if (!routestops) {
+      return res.status(404).json({
+        message: "Not Found",
+      })
+    }
+    if (routestops.stop_order == 1) {
+      const route = await Route.findOne({
+        _id: route_id,
+        is_active: true
+      })
+      const stop_start = await Stop.findOne({
+        _id: route.start_id
+      })
+      const stop_end = await Stop.findOne({
+        _id: route.stop_id
+      })
+      const start = stop_start.location.coordinates
+      const end = stop_end.location.coordinates
+      const startLat = start[1]
+      const endLat = end[1]
+      const locations = await StopLocation.find({
+        stop_id: routestops.stop_id,
+        is_active: true
+      })
+      const arr = []
+      const location = {
+        location_name: stop_start.name,
+        is_active: true,
+        status: true
+      }
+      arr.push(location)
+      console.log("location là : ", locations)
+      for (const location of locations) {
+        // chỉ check kinh độ 
+        const lat = location.location.coordinates[1]
+        // xe đi về phía nam
+        if (endLat < startLat) {
+          console.log("xe đi từ bắc sang nam")
+          if (lat < startLat) {
+            arr.push(location)
+          }
+        }
+        // xe đi về phía bắc
+        else if (endLat > startLat) {
+          console.log("xe đi từ nam sang bắc")
+          if (lat > startLat) {
+            arr.push(location)
+          }
+        }
+      }
+      console.log("arr khi chọn được điểm là : ", arr)
+      return res.status(200).json({
+        message: "Success",
+        data: arr
+      })
+    }
+    const routestopsMaxStopOrder = await RouteStop.find({
+      route_id: route_id,
+    })
+    const Arr_stop_order = []
+    for (const router of routestopsMaxStopOrder) {
+      Arr_stop_order.push(router.stop_order)
+    }
+    console.log("array là : ", Arr_stop_order)
+    console.log(" a= ", routestops.stop_order)
+    console.log(" b = ", Math.max(...Arr_stop_order))
+    if (routestops.stop_order == Math.max(...Arr_stop_order)) {
+      console.log("chạy vào order _max")
+      const route = await Route.findOne({
+        _id: route_id,
+        is_active: true
+      })
+      const stop_start = await Stop.findOne({
+        _id: route.start_id
+      })
+      const stop_end = await Stop.findOne({
+        _id: route.stop_id
+      })
+      const start = stop_start.location.coordinates
+      const end = stop_end.location.coordinates
+      const startLat = start[1]
+
+      const endLat = end[1]
+      console.log("điểm bắt đầu và điểm kết thúc là : ", start, "và", end)
+      console.log("stops_id là : ", routestops.stop_id)
+      const locations = await StopLocation.find({
+        stop_id: routestops.stop_id,
+        is_active: true
+      })
+      console.log("location là : ", locations)
+      const arr = []
+      const location = {
+        location_name: stop_end.name,
+        is_active: true,
+        status: true
+      }
+      arr.push(location)
+      for (const location of locations) {
+        // chỉ check kinh độ 
+        const lat = location.location.coordinates[1] // độ của đểm chi tiết vị trí
+        console.log("kinh độ của từng location là : ", lat)
+        // xe đi về phía nam
+        if (endLat < startLat) {
+          console.log("xe đang đi từ bắc sang nam")
+          if (lat > endLat) {
+            arr.push(location)
+          }
+        }
+        // xe đi về phía bắc
+        else if (endLat > startLat) {
+          console.log("xe đang đi từ nam ra bắc")
+          if (lat > startLat) {
+            arr.push(location)
+          }
+        }
+      }
+      return res.status(200).json({
+        message: "Success",
+        data: arr
+      })
+    } else {
+      console.log("chạy vào giữ order")
+      const locations = await StopLocation.find({
+        stop_id: routestops.stop_id,
+        is_active: true
+      })
+      return res.status(200).json({
+        message: "Success",
+        data: locations
+      })
+    }
+  } catch (err) {
+    console.log("lỗi trong chương trình là : ", err)
+  }
+}
+module.exports.getPrice = async (req, res) => {
+  try {
+    const { route_id, start_id, end_id, bus_type_id } = req.body
+    const routesegmentprices = await RouteSegmentPrices.findOne({
+      route_id: route_id,
+      start_id: start_id,
+      end_id: end_id,
+      bus_type_id: bus_type_id
+    })
+    if (!routesegmentprices) {
+      res.status(404).json({
+        message: "Not Found"
+      })
+    }
+    const price = routesegmentprices.base_price;
+    console.log("price là : ", routesegmentprices)
+    res.status(200).json({
+      message: "Success",
+      data: price
+    })
+  } catch (err) {
+    console.log("lỗi trong chương trình trên là:  ", err)
+    res.status(500).json({
+      message: "Server error"
+    })
+  }
+}
+
+module.exports.createBooking = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const {
+      user_id,
+      trip_id,
+      start_id,
+      end_id,
+      seat_labels,      // string[] — ["A1", "A2"]
+      ticket_price,
+      payment_method = "CASH_ON_BOARD",
+      passenger_name,
+      passenger_phone,
+      passenger_email,
+    } = req.body;
+
+    /* ════════════════════════════════════
+       1. Validate input
+    ════════════════════════════════════ */
+    if (!user_id || !trip_id || !start_id || !end_id) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        message: "Thiếu thông tin bắt buộc (user_id, trip_id, start_id, end_id)",
+      });
+    }
+    if (!Array.isArray(seat_labels) || seat_labels.length === 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Vui lòng chọn ít nhất 1 ghế" });
+    }
+    if (!passenger_name?.trim() || !passenger_phone?.trim()) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Thiếu họ tên hoặc số điện thoại hành khách" });
+    }
+    if (!ticket_price || Number(ticket_price) <= 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Giá vé không hợp lệ" });
+    }
+    if (!["ONLINE", "CASH_ON_BOARD"].includes(payment_method)) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Phương thức thanh toán không hợp lệ" });
+    }
+
+    /* ════════════════════════════════════
+       2. Kiểm tra chuyến xe
+    ════════════════════════════════════ */
+    const trip = await Trip.findById(trip_id).session(session);
+    if (!trip) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: "Không tìm thấy chuyến xe" });
+    }
+    if (trip.status !== "SCHEDULED") {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Chuyến xe không còn nhận đặt vé" });
+    }
+
+    /* ════════════════════════════════════
+       3. Kiểm tra ghế đã được đặt chưa
+       → query BookingOrder theo trip_id + seat_id
+       (BookingOrder không có seat_id trực tiếp nên
+        ta check qua các order đã tồn tại của cùng trip)
+    ════════════════════════════════════ */
+
+    // Lấy tất cả order của trip này còn active (không bị CANCELLED)
+    const existingOrders = await BookingOrder.find({
+      trip_id,
+      order_status: { $ne: "CANCELLED" },
+    })
+      .select("seat_labels")
+      .session(session);
+
+    // Gom tất cả ghế đã đặt thành 1 mảng phẳng
+    const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
+
+    // Tìm ghế bị trùng
+    const conflictSeats = seat_labels.filter((s) => bookedSeats.includes(s));
+    if (conflictSeats.length > 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(409).json({
+        message: `Ghế ${conflictSeats.join(", ")} đã được đặt. Vui lòng chọn ghế khác.`,
+      });
+    }
+
+    /* ════════════════════════════════════
+       4. Tính tổng tiền
+    ════════════════════════════════════ */
+    const price = Number(ticket_price);
+    const total_price = seat_labels.length * price;
+
+    /* ════════════════════════════════════
+       5. Tạo BookingOrder
+    ════════════════════════════════════ */
+    const [order] = await BookingOrder.create(
+      [
+        {
+          user_id,
+          trip_id,
+          start_id,
+          end_id,
+          seat_labels,           // lưu danh sách ghế vào order
+          order_status: "CREATED",
+          total_price,
+          passenger_name: passenger_name.trim(),
+          passenger_phone: passenger_phone.trim(),
+          passenger_email: passenger_email?.trim() || null,
+        },
+      ],
+      { session }
+    );
+
+    /* ════════════════════════════════════
+       6. Tạo BookingPayment
+    ════════════════════════════════════ */
+    const [payment] = await BookingPayment.create(
+      [
+        {
+          order_id: order._id,
+          payment_method,
+          amount: total_price,
+          payment_status: "PENDING",
+        },
+      ],
+      { session }
+    );
+
+    /* ════════════════════════════════════
+       7. Commit
+    ════════════════════════════════════ */
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.status(201).json({
+      message: "Đặt vé thành công",
+      data: {
+        order: {
+          _id: order._id,
+          order_status: order.order_status,
+          total_price: order.total_price,
+          seat_labels: order.seat_labels,
+          created_at: order.created_at,
+        },
+        payment: {
+          _id: payment._id,
+          payment_method: payment.payment_method,
+          amount: payment.amount,
+          payment_status: payment.payment_status,
+        },
+        summary: {
+          total_seats: seat_labels.length,
+          total_price,
+          passenger_name: passenger_name.trim(),
+          passenger_phone: passenger_phone.trim(),
+        },
+      },
+    });
+  } catch (err) {
+    try {
+      await session.abortTransaction();
+    } catch (_) { }
+    session.endSession();
+    console.error("[createBooking] Error:", err);
+    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+  }
+}
+module.exports.getBookedSeats = async (req, res) => {
+  try {
+    const { trip_id } = req.body;
+
+    if (!trip_id) {
+      return res.status(400).json({ message: "Thiếu trip_id" });
+    }
+
+    // Lấy tất cả order của trip này chưa bị huỷ
+    const orders = await BookingOrder.find({
+      trip_id,
+      order_status: { $ne: "CANCELLED" },
+    }).select("seat_labels");
+
+    // Gom tất cả seat_labels thành 1 mảng phẳng, bỏ duplicate
+    const bookedSeats = [
+      ...new Set(orders.flatMap((o) => o.seat_labels || [])),
+    ];
+
+    return res.status(200).json({
+      message: "Lấy danh sách ghế đã đặt thành công",
+      data: bookedSeats, // ["A1", "A3", "A7", ...]
+    });
+  } catch (err) {
+    console.error("[getBookedSeats] Error:", err);
+    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+  }
+}
+module.exports.getOrderHistory = async (req, res) => {
+  try {
+    // user_id lấy từ middleware auth (req.user._id)
+    const user_id = res.locals.user.id
+    if (!user_id) {
+      return res.status(401).json({ message: "Không xác định được tài khoản" });
+    }
+
+    const page = Math.max(1, parseInt(req.body.page) || 1);
+    const limit = Math.max(1, parseInt(req.body.limit) || 10);
+    const skip = (page - 1) * limit;
+
+    // Tổng số đơn
+    const total = await BookingOrder.countDocuments({ user_id });
+    const totalPages = Math.ceil(total / limit);
+
+    // Lấy danh sách đơn, populate trip + route
+    const orders = await BookingOrder.find({ user_id })
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate({
+        path: "trip_id",
+        select: "departure_time arrival_time status bus_id route_id",
+        populate: [
+          {
+            path: "route_id",
+            select: "start_id stop_id",
+            populate: [
+              { path: "start_id", select: "name province" },
+              { path: "stop_id", select: "name province" },
+            ],
+          },
+          {
+            path: "bus_id",
+            select: "bus_type_id",
+            populate: { path: "bus_type_id", select: "name" },
+          },
+        ],
+      })
+      .populate("start_id", "stop_id stop_order")
+      .populate("end_id", "stop_id stop_order")
+      .lean();
+
+    // Lấy payment tương ứng cho từng order
+    const orderIds = orders.map((o) => o._id);
+    const payments = await BookingPayment.find({
+      order_id: { $in: orderIds },
+    })
+      .select("order_id payment_method payment_status amount paid_at")
+      .lean();
+
+    const paymentMap = {};
+    payments.forEach((p) => {
+      paymentMap[p.order_id.toString()] = p;
+    });
+
+    // Format response
+    const data = orders.map((order) => {
+      const trip = order.trip_id;
+      const payment = paymentMap[order._id.toString()] || null;
+
+      return {
+        _id: order._id,
+        order_status: order.order_status,
+        total_price: order.total_price,
+        seat_labels: order.seat_labels || [],
+        passenger_name: order.passenger_name,
+        passenger_phone: order.passenger_phone,
+        created_at: order.created_at,
+
+        trip: trip
+          ? {
+            _id: trip._id,
+            departure_time: trip.departure_time,
+            arrival_time: trip.arrival_time,
+            status: trip.status,
+            bus_type_name: trip.bus_id?.bus_type_id?.name || null,
+            route: {
+              from: {
+                name: trip.route_id?.start_id?.name || null,
+                province: trip.route_id?.start_id?.province || null,
+              },
+              to: {
+                name: trip.route_id?.stop_id?.name || null,
+                province: trip.route_id?.stop_id?.province || null,
+              },
+            },
+          }
+          : null,
+
+        payment: payment
+          ? {
+            payment_method: payment.payment_method,
+            payment_status: payment.payment_status,
+            amount: payment.amount,
+            paid_at: payment.paid_at,
+          }
+          : null,
+      };
+    });
+
+    return res.status(200).json({
+      message: "Lấy lịch sử đặt vé thành công",
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    });
+  } catch (err) {
+    console.error("[getOrderHistory] Error:", err);
+    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+  }
+};
