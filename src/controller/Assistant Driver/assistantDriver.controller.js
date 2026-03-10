@@ -1,0 +1,394 @@
+const Trip = require("../../model/Trip"); // đổi đúng path model của bạn
+const BookingOrder = require("./../../model/BookingOrder")
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDate(date) {
+    if (!date) return null;
+    return new Date(date).toISOString().split("T")[0];
+}
+
+function formatTime(date) {
+    if (!date) return null;
+    return new Date(date).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    });
+}
+
+function formatDateTime(date) {
+    if (!date) return null;
+    return new Date(date).toLocaleString("vi-VN", { hour12: false });
+}
+
+function formatDuration(start, end) {
+    if (!start || !end) return "N/A";
+    const diff = new Date(end) - new Date(start);
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+}
+
+// ─── 1. Lấy danh sách ca làm phụ xe ──────────────────────────────────────────
+// GET /api/assistant/check/getAllTripsForAssistants?page=1&limit=10&status=PENDING
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports.getAllTripsForAssistants = async (req, res) => {
+    console.log("Chạy vào lấy slot ca phụ xe");
+    try {
+        const assistantId = res.locals.user?.id;
+        const { status, limit = 10, page = 1 } = req.query;
+
+        if (!assistantId) {
+            return res.status(400).json({ success: false, message: "Assistant ID is required" });
+        }
+
+        // ✅ Trip có field assistant_id trực tiếp (không phải trong mảng drivers)
+        let filter = {
+            assistant_id: assistantId,
+            status: { $ne: "CANCELLED" },
+        };
+
+        // Filter theo trip status nếu có
+        if (status && ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"].includes(status)) {
+            filter.status = status;
+        }
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const total = await Trip.countDocuments(filter);
+        const totalPages = Math.ceil(total / parseInt(limit));
+
+        const trips = await Trip.find(filter)
+            .populate({
+                path: "route_id",
+                select: "departure_location arrival_location distance",
+            })
+            .populate({
+                path: "bus_id",
+                select: "license_plate bus_type_id",
+                populate: {
+                    path: "bus_type_id",
+                    select: "name seats_count",
+                },
+            })
+            .populate({
+                path: "drivers.driver_id",
+                select: "name phone",
+            })
+            .populate({
+                path: "assistant_id",
+                select: "name phone",
+            })
+            .sort({ departure_time: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        // Format response
+        const data = trips.map((trip) => ({
+            id: trip._id,
+            tripId: trip._id,
+            date: formatDate(trip.departure_time),
+            departureTime: formatTime(trip.departure_time),
+            arrivalTime: formatTime(trip.arrival_time),
+            from: trip.route_id?.departure_location || "N/A",
+            to: trip.route_id?.arrival_location || "N/A",
+            distance: trip.route_id?.distance || "N/A",
+            vehicle: trip.bus_id?.bus_type_id?.name || "N/A",
+            vehicleType: trip.bus_id?.bus_type_id?.name || "N/A",
+            licensePlate: trip.bus_id?.license_plate || "N/A",
+            totalSeats: trip.bus_id?.bus_type_id?.seats_count || 0,
+            // Lái xe chính của chuyến này
+            mainDrivers: trip.drivers?.map((d) => ({
+                name: d.driver_id?.name || "N/A",
+                phone: d.driver_id?.phone || "N/A",
+                shiftStatus: d.status,
+            })) || [],
+            tripStatus: trip.status,
+            duration: formatDuration(trip.departure_time, trip.arrival_time),
+            createdAt: trip.created_at,
+            displayTime: `${formatTime(trip.departure_time)} - ${formatTime(trip.arrival_time)}`,
+            displayRoute: `${trip.route_id?.departure_location || "N/A"} → ${trip.route_id?.arrival_location || "N/A"}`,
+        }));
+
+        return res.status(200).json({
+            success: true,
+            data,
+            total,
+            totalPages,
+            currentPage: parseInt(page),
+        });
+    } catch (error) {
+        console.error("Error in getAllTripsForAssistants:", error);
+        return res.status(500).json({ success: false, message: "Failed to fetch assistant shifts", error: error.message });
+    }
+};
+
+// ─── 2. Thống kê ca làm phụ xe ────────────────────────────────────────────────
+// GET /api/assistant/check/shifts/stats
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports.getAssistantStats = async (req, res) => {
+    console.log("getAssistantStats called");
+    try {
+        const assistantId = res.locals.user?.id;
+        if (!assistantId) {
+            return res.status(401).json({ success: false, message: "Assistant ID not found" });
+        }
+
+        const filter = { assistant_id: assistantId, status: { $ne: "CANCELLED" } };
+
+        const trips = await Trip.find(filter)
+            .populate({ path: "route_id", select: "distance" })
+            .lean();
+
+        let stats = {
+            totalShifts: trips.length,
+            scheduledShifts: 0,
+            runningShifts: 0,
+            completedShifts: 0,
+            totalHours: 0,
+            totalDistance: 0,
+        };
+
+        trips.forEach((trip) => {
+            if (trip.status === "SCHEDULED") stats.scheduledShifts++;
+            if (trip.status === "RUNNING") stats.runningShifts++;
+            if (trip.status === "FINISHED") stats.completedShifts++;
+
+            if (trip.departure_time && trip.arrival_time) {
+                const h = (new Date(trip.arrival_time) - new Date(trip.departure_time)) / (1000 * 60 * 60);
+                if (h > 0) stats.totalHours += h;
+            }
+
+            const d = parseFloat(trip.route_id?.distance);
+            if (!isNaN(d)) stats.totalDistance += d;
+        });
+
+        stats.totalHours = Math.round(stats.totalHours * 100) / 100;
+        stats.totalDistance = Math.round(stats.totalDistance * 100) / 100;
+
+        return res.status(200).json({ success: true, data: stats });
+    } catch (error) {
+        console.error("Error in getAssistantStats:", error);
+        return res.status(500).json({ success: false, message: "Failed to fetch assistant stats", error: error.message });
+    }
+};
+module.exports.getAssistantTrips = async (req, res) => {
+    try {
+        const assistantId = res.locals.user?.id;
+        if (!assistantId) {
+            return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+        }
+
+        const { page = 1, limit = 10, status } = req.query;
+
+        const filter = { assistant_id: assistantId };
+        if (status && ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"].includes(status)) {
+            filter.status = status;
+        } else {
+            filter.status = { $ne: "CANCELLED" };
+        }
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const total = await Trip.countDocuments(filter);
+        const totalPages = Math.ceil(total / parseInt(limit));
+
+        const trips = await Trip.find(filter)
+            .populate({
+                path: "route_id",           // Route
+                select: "start_id stop_id distance_km scheduled_duration estimated_duration",
+                populate: [
+                    { path: "start_id", select: "name province" },  // Stop
+                    { path: "stop_id", select: "name province" },  // Stop
+                ],
+            })
+            .populate({
+                path: "bus_id",             // Bus
+                select: "license_plate bus_type_id",
+                populate: { path: "bus_type_id", select: "name seats_count" },
+            })
+            .populate({
+                path: "drivers.driver_id",  // User
+                select: "name phone",
+            })
+            .sort({ departure_time: 1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+
+        const data = trips.map((trip) => ({
+            _id: trip._id,
+            departureTime: formatTime(trip.departure_time),
+            arrivalTime: formatTime(trip.arrival_time),
+            date: formatDate(trip.departure_time),
+            // Route → Stop
+            departureLocation: trip.route_id?.start_id?.name || "N/A",
+            departurePovince: trip.route_id?.start_id?.province || "N/A",
+            arrivalLocation: trip.route_id?.stop_id?.name || "N/A",
+            arrivalProvince: trip.route_id?.stop_id?.province || "N/A",
+            // distance & duration: ưu tiên trip → route
+            distance: trip.scheduled_distance || trip.route_id?.distance_km || null,
+            duration: formatDuration(trip.scheduled_duration || trip.route_id?.estimated_duration),
+            // Bus
+            vehicleType: trip.bus_id?.bus_type_id?.name || "N/A",
+            licensePlate: trip.bus_id?.license_plate || "N/A",
+            totalSeats: trip.bus_id?.bus_type_id?.seats_count || 0,
+            // Trip status
+            status: trip.status,
+            // Drivers (mảng con trong Trip)
+            drivers: (trip.drivers || []).map((d) => ({
+                name: d.driver_id?.name || "N/A",
+                phone: d.driver_id?.phone || "",
+                status: d.status,
+                shiftStart: d.shift_start,
+                shiftEnd: d.shift_end,
+            })),
+        }));
+
+        return res.status(200).json({ success: true, data, total, totalPages, currentPage: parseInt(page) });
+    } catch (err) {
+        console.error("[getAssistantTrips]", err);
+        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+    }
+};
+
+module.exports.getAssistantTripDetail = async (req, res) => {
+    try {
+        const assistantId = res.locals.user?.id;
+        const { tripId } = req.params;
+
+        if (!assistantId) {
+            return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+        }
+
+        const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId })
+            .populate({
+                path: "route_id",
+                select: "start_id stop_id distance_km estimated_duration",
+                populate: [
+                    { path: "start_id", select: "name province location" },
+                    { path: "stop_id", select: "name province location" },
+                ],
+            })
+            .populate({
+                path: "bus_id",
+                select: "license_plate bus_type_id",
+                populate: { path: "bus_type_id", select: "name seats_count" },
+            })
+            .populate({
+                path: "drivers.driver_id",
+                select: "name phone",
+            })
+            .lean();
+
+        if (!trip) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy chuyến xe" });
+        }
+
+        // Booking của chuyến này
+        const bookings = await BookingOrder.find({
+            trip_id: tripId,
+            order_status: { $ne: "CANCELLED" },
+        }).lean();
+
+        const passengers = bookings.map((b) => ({
+            _id: b._id,
+            passenger_name: b.passenger_name || "N/A",
+            passenger_phone: b.passenger_phone || "N/A",
+            passenger_email: b.passenger_email || null,
+            seat_labels: b.seat_labels || [],
+            total_price: b.total_price || 0,
+            order_status: b.order_status,
+            created_at: b.created_at,
+        }));
+
+        const totalSeatsBooked = passengers.reduce((s, p) => s + (p.seat_labels?.length || 0), 0);
+
+        const tripDetail = {
+            _id: trip._id,
+            departureTime: formatTime(trip.departure_time),
+            arrivalTime: formatTime(trip.arrival_time),
+            date: formatDate(trip.departure_time),
+            departureLocation: trip.route_id?.start_id?.name || "N/A",
+            departureProvince: trip.route_id?.start_id?.province || "N/A",
+            arrivalLocation: trip.route_id?.stop_id?.name || "N/A",
+            arrivalProvince: trip.route_id?.stop_id?.province || "N/A",
+            distance: trip.scheduled_distance || trip.route_id?.distance_km || null,
+            duration: formatDuration(trip.scheduled_duration || trip.route_id?.estimated_duration),
+            vehicleType: trip.bus_id?.bus_type_id?.name || "N/A",
+            licensePlate: trip.bus_id?.license_plate || "N/A",
+            totalSeats: trip.bus_id?.bus_type_id?.seats_count || 0,
+            totalSeatsBooked,
+            totalPassengers: passengers.length,
+            status: trip.status,
+            drivers: (trip.drivers || []).map((d) => ({
+                name: d.driver_id?.name || "N/A",
+                phone: d.driver_id?.phone || "",
+                status: d.status,
+                shiftStart: d.shift_start,
+                shiftEnd: d.shift_end,
+                actualShiftStart: d.actual_shift_start,
+                actualShiftEnd: d.actual_shift_end,
+            })),
+        };
+
+        return res.status(200).json({
+            success: true,
+            data: { trip: tripDetail, passengers },
+        });
+    } catch (err) {
+        console.error("[getAssistantTripDetail]", err);
+        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+    }
+};
+module.exports.updateBoarded = async (req, res) => {
+    console.log("đã lên xe")
+    try {
+        const assistantId = res.locals.user?.id;
+        const { orderId } = req.params;
+        const { is_boarded } = req.body;
+        console.log("is_boarded là : ", is_boarded)
+
+        if (!assistantId)
+            return res.status(401).json({ success: false, message: "Không xác định tài khoản" });
+        if (typeof is_boarded !== "boolean")
+            return res.status(400).json({ success: false, message: "is_boarded phải là true hoặc false" });
+        if (is_boarded == true) {
+            trangthai = 'PAID'
+        } else {
+            trangthai = 'CANCELLED'
+        }
+        const order = await BookingOrder.findById(orderId).lean();
+        if (!order)
+            return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt vé" });
+        if (order.order_status !== "CREATED")
+            return res.status(400).json({ success: false, message: "Chỉ cập nhật được đơn ở trạng thái CREATED" });
+
+        // Kiểm tra chuyến thuộc phụ xe này
+        const trip = await Trip.findOne({ _id: order.trip_id, assistant_id: assistantId }).lean();
+        if (!trip)
+            return res.status(403).json({ success: false, message: "Bạn không có quyền cập nhật chuyến này" });
+        if (!["SCHEDULED", "RUNNING"].includes(trip.status))
+            return res.status(400).json({ success: false, message: "Chuyến không ở trạng thái có thể cập nhật" });
+
+        const updated = await BookingOrder.findByIdAndUpdate(
+            orderId,
+            {
+                order_status: trangthai,
+                boarded_at: new Date(),   // đánh dấu đã bấm — dùng để FE ẩn nút khi reload
+            },
+            { new: true }
+        ).lean();
+
+        return res.status(200).json({
+            success: true,
+            message: is_boarded ? "Xác nhận hành khách đã lên xe" : "Xác nhận hành khách vắng mặt",
+            data: {
+                _id: updated._id,
+                is_boarded: updated.is_boarded,
+                boarded_at: updated.boarded_at,
+            },
+        });
+    } catch (err) {
+        console.error("[updateBoarded]", err);
+        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+    }
+}
