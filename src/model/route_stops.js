@@ -22,7 +22,7 @@ const RouteStopSchema = new mongoose.Schema(
         },
         estimated_time: {
             type: Number,
-            required: false, // VD: "08 tiếng " // Thời gian ước tính từ điếm xuất phát đến điểm node 
+            required: true, // VD: "08 tiếng " // Thời gian ước tính từ điếm xuất phát đến điểm node 
         },
         is_pickup: {
             type: Boolean,

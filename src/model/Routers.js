@@ -15,7 +15,8 @@ const RouteSchema = new mongoose.Schema(
             ref: "Stop",
             required: true,
         },
-        estimated_duration:{
+
+        estimated_duration: {
             type: Number,
             required: false
         },
@@ -23,7 +24,10 @@ const RouteSchema = new mongoose.Schema(
             type: Number,
             required: false,
         },
-
+        tine: {
+            type: Date,
+            require: false
+        },
         is_active: {
             type: Boolean,
             default: true,
@@ -32,7 +36,7 @@ const RouteSchema = new mongoose.Schema(
     {
         timestamps: { createdAt: "created_at", updatedAt: false },
     }
-    
+
 );
 module.exports = mongoose.model("Route", RouteSchema);
 

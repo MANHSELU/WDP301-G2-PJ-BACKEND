@@ -8,6 +8,8 @@ const Route = require("../../model/Routers");
 const Stop = require("../../model/Stops");
 const RouteStop = require("../../model/route_stops");
 const StopLocation = require("../../model/StopLocation");
+const Trip = require("./../../model/Trip")
+const RouteSegmentPrices = require("./../../model/RouteSegmentPrice");
 
 module.exports.register = async (req, res) => {
   try {
@@ -567,3 +569,441 @@ module.exports.searchRoutes = async (req, res) => {
     });
   }
 };
+// son làm 
+module.exports.getSearch = async (req, res) => {
+  try {
+    console.log("chạy vào search")
+    const { nodeId_start, nodeId_end, date } = req.body;
+    console.log("date là: ", date)
+    console.log("nodeid start là : ", nodeId_start)
+    if (!nodeId_start || !nodeId_end) {
+      return res.status(400).json({
+        message: "Thiếu nodeId_start hoặc nodeId_end",
+      });
+    }
+    console.log("1")
+    // 1️⃣ Tìm tất cả routeStop của start node
+    const startStops = await RouteStop.find({
+      stop_id: nodeId_start,
+      is_pickup: true,
+    });
+
+    if (!startStops.length) {
+      return res.json([]);
+    }
+
+    const results = [];
+
+    // 2️⃣ Với mỗi start, kiểm tra có end trong cùng route không
+    for (const start of startStops) {
+      const endStop = await RouteStop.findOne({
+        route_id: start.route_id,
+        stop_id: nodeId_end,
+        stop_order: { $gt: start.stop_order }, // đảm bảo đúng chiều
+      });
+      if (endStop) {
+        results.push(endStop);
+      }
+    }
+    // check date 
+    const startOfDay = new Date(date);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+    console.log(" ngày bắt đầu và kết thúc là : ", startOfDay, endOfDay)
+    const arr = []
+    const checkList = []
+    for (const route of results) {
+      const node = await Route.findOne({
+        _id: route.route_id,
+        is_active: true
+      })
+        .populate({
+          path: "start_id",
+          select: "province"
+        })
+        .populate({
+          path: "stop_id",
+          select: "province"
+        })
+        ;
+      console.log("3")
+
+      const checknode = await Trip.findOne({
+        route_id: route.route_id,
+        departure_time: {
+          $gte: startOfDay,
+          $lte: endOfDay,
+        }
+      })
+      console.log("nodecheck là: ", checknode)
+      if (!checknode) {
+        // chuyển qua vòng for tiếp theo
+        continue
+      }
+      checkList.push(checknode)
+      // if (!checknode) {
+      //   console.log("rơi vào không có ")
+      //   return res.json({
+      //     arr
+      //   })
+      // }
+      // const node = await Trip.findOne({
+      //   route_id: route.route_id,
+      // })
+      //   .populate({
+      //     path: "route_id",
+      //     populate: [
+      //       {
+      //         path: "start_id",
+      //         select: "province",
+      //       },
+      //       {
+      //         path: "stop_id",
+      //         select: "province",
+      //       },
+      //     ],
+      //   })
+      //   .populate({
+      //     path: "bus_id",
+      //     populate: {
+      //       path: "bus_type_id"
+      //     },
+      //     select: "-seat_layout"
+      //   })
+      //   .select("-drivers -assistant_id")
+      console.log("4")
+      if (node) {
+        arr.push(node)
+      }
+    }
+    if (checkList.length == 0) {
+      return res.json([]);
+    }
+    return res.json(arr);
+  } catch (err) {
+    console.log("Lỗi của chương trình là:", err);
+    return res.status(500).json({
+      message: "Lỗi server",
+    });
+  }
+};
+module.exports.viewTripBus = async (req, res) => {
+  try {
+    const { route_id } = req.body
+    console.log("id là : ", route_id)
+    if (!route_id) {
+      return res.status(404).json({
+        "message": "Not Found"
+      })
+    }
+    const node = await Trip.find({
+      route_id: route_id,
+      status: "SCHEDULED"
+    })
+      .populate({
+        path: "route_id",
+        populate: [
+          {
+            path: "start_id",
+            select: "province name",
+          },
+          {
+            path: "stop_id",
+            select: "province name",
+          },
+        ],
+      })
+      .populate({
+        path: "bus_id",
+        populate: {
+          path: "bus_type_id"
+        },
+        select: "-seat_layout"
+      })
+      .select("-drivers -assistant_id")
+    const routeStop = await RouteStop.find({
+      route_id: route_id,
+
+      is_pickup: true
+    }).populate("stop_id")
+    const arr = node.map(trip => ({
+      ...trip.toObject(),
+      time: routeStop
+    }))
+    return res.status(201).json({
+      "message": "Success",
+      data: arr
+    })
+  } catch (err) {
+    console.log("lỗi trong chương trình là : ", err)
+    return res.status(404).json({
+      "message": "Not Found"
+    })
+  }
+}
+module.exports.diagramBus = async (req, res) => {
+  try {
+    const { route_id } = req.body
+    if (!route_id) {
+      return res.status(404).json({
+        message: "Not found"
+      })
+    }
+    const trip = await Trip.findOne({
+      route_id: route_id
+    })
+      .populate({
+        path: "bus_id",
+        populate: {
+          path: "bus_type_id"
+        }
+      })
+      .populate({
+        path: "route_id",
+        populate: [
+          { path: "start_id" },
+          { path: "stop_id" }
+        ]
+      })
+    return res.status(200).json({
+      mesage: "Success",
+      data: trip
+    })
+
+  } catch (err) {
+    console.log("lỗi trong chương trình là : ", err)
+    return res.status(404).json({
+      message: "Not found"
+    })
+  }
+}
+module.exports.endPoint = async (req, res) => {
+  console.log("chạy vào endpoint")
+  try {
+    const { start_id, route_id, bus_type_id } = req.body
+    console.log("start_id và router id là: ", start_id, route_id, bus_type_id)
+    if (!start_id || !route_id) {
+      return res.status(404).json({
+        message: "Not found"
+      })
+    }
+    const routeSegmentprices = await RouteSegmentPrices.find({
+      start_id: start_id,
+      route_id: route_id,
+      bus_type_id: bus_type_id
+      // is_active: true
+    })
+    console.log("routeSegmentprices là : ", routeSegmentprices)
+    const arr = []
+    for (const router of routeSegmentprices) {
+      const routeStop = await RouteStop.findOne({
+        stop_id: router.end_id,
+        is_pickup: true
+      })
+        .populate("stop_id")
+      if (routeStop) {
+        arr.push(routeStop)
+      }
+    }
+    return res.status(201).json({
+      message: "Success",
+      data: arr
+    })
+  } catch (err) {
+    console.log("lỗi trong chương trình trên là : ", err)
+    return res.status(500).json({
+      message: "Server Error"
+    })
+  }
+}
+module.exports.startPoint = async (req, res) => {
+  try {
+    const { route_id } = req.body;
+    const routerStop = await RouteStop.find({
+      route_id: route_id,
+      is_pickup: true
+    }).populate("stop_id")
+    return res.status(200).json({
+      message: "Success",
+      data: routerStop
+    })
+  } catch (err) {
+    console.log("lỗi trong chương trình là: ", err)
+    return res.status(500).json({
+      message: "Server Error",
+    })
+  }
+}
+module.exports.locationPoint = async (req, res) => {
+  try {
+    const { stop_id, route_id } = req.body
+    console.log("stop_id và route_id là: ", stop_id, " va", route_id)
+    const routestops = await RouteStop.findOne({
+      route_id: route_id,
+      stop_id: stop_id,
+      is_pickup: true
+    })
+    if (!routestops) {
+      return res.status(404).json({
+        message: "Not Found",
+      })
+    }
+    if (routestops.stop_order == 1) {
+      const route = await Route.findOne({
+        _id: route_id,
+        is_active: true
+      })
+      const stop_start = await Stop.findOne({
+        _id: route.start_id
+      })
+      const stop_end = await Stop.findOne({
+        _id: route.stop_id
+      })
+      const start = stop_start.location.coordinates
+      const end = stop_end.location.coordinates
+      const startLat = start[1]
+      const endLat = end[1]
+      const locations = await StopLocation.find({
+        stop_id: routestops.stop_id,
+        is_active: true
+      })
+      const arr = []
+      const location = {
+        location_name: stop_start.name,
+        is_active: true,
+        status: true
+      }
+      arr.push(location)
+      console.log("location là : ", locations)
+      for (const location of locations) {
+        // chỉ check kinh độ 
+        const lat = location.location.coordinates[1]
+        // xe đi về phía nam
+        if (endLat < startLat) {
+          console.log("xe đi từ bắc sang nam")
+          if (lat < startLat) {
+            arr.push(location)
+          }
+        }
+        // xe đi về phía bắc
+        else if (endLat > startLat) {
+          console.log("xe đi từ nam sang bắc")
+          if (lat > startLat) {
+            arr.push(location)
+          }
+        }
+      }
+      console.log("arr khi chọn được điểm là : ", arr)
+      return res.status(200).json({
+        message: "Success",
+        data: arr
+      })
+    }
+    const routestopsMaxStopOrder = await RouteStop.find({
+      route_id: route_id,
+    })
+    const Arr_stop_order = []
+    for (const router of routestopsMaxStopOrder) {
+      Arr_stop_order.push(router.stop_order)
+    }
+    console.log("array là : ", Arr_stop_order)
+    console.log(" a= ", routestops.stop_order)
+    console.log(" b = ", Math.max(...Arr_stop_order))
+    if (routestops.stop_order == Math.max(...Arr_stop_order)) {
+      console.log("chạy vào order _max")
+      const route = await Route.findOne({
+        _id: route_id,
+        is_active: true
+      })
+      const stop_start = await Stop.findOne({
+        _id: route.start_id
+      })
+      const stop_end = await Stop.findOne({
+        _id: route.stop_id
+      })
+      const start = stop_start.location.coordinates
+      const end = stop_end.location.coordinates
+      const startLat = start[1]
+
+      const endLat = end[1]
+      console.log("điểm bắt đầu và điểm kết thúc là : ", start, "và", end)
+      console.log("stops_id là : ", routestops.stop_id)
+      const locations = await StopLocation.find({
+        stop_id: routestops.stop_id,
+        is_active: true
+      })
+      console.log("location là : ", locations)
+      const arr = []
+      const location = {
+        location_name: stop_end.name,
+        is_active: true,
+        status: true
+      }
+      arr.push(location)
+      for (const location of locations) {
+        // chỉ check kinh độ 
+        const lat = location.location.coordinates[1] // độ của đểm chi tiết vị trí
+        console.log("kinh độ của từng location là : ", lat)
+        // xe đi về phía nam
+        if (endLat < startLat) {
+          console.log("xe đang đi từ bắc sang nam")
+          if (lat > endLat) {
+            arr.push(location)
+          }
+        }
+        // xe đi về phía bắc
+        else if (endLat > startLat) {
+          console.log("xe đang đi từ nam ra bắc")
+          if (lat > startLat) {
+            arr.push(location)
+          }
+        }
+      }
+      return res.status(200).json({
+        message: "Success",
+        data: arr
+      })
+    } else {
+      console.log("chạy vào giữ order")
+      const locations = await StopLocation.find({
+        stop_id: routestops.stop_id,
+        is_active: true
+      })
+      return res.status(200).json({
+        message: "Success",
+        data: locations
+      })
+    }
+  } catch (err) {
+    console.log("lỗi trong chương trình là : ", err)
+  }
+}
+module.exports.getPrice = async (req, res) => {
+  try {
+    const { route_id, start_id, end_id, bus_type_id } = req.body
+    const routesegmentprices = await RouteSegmentPrices.findOne({
+      route_id: route_id,
+      start_id: start_id,
+      end_id: end_id,
+      bus_type_id: bus_type_id
+    })
+    if (!routesegmentprices) {
+      res.status(404).json({
+        message: "Not Found"
+      })
+    }
+    const price = routesegmentprices.base_price;
+    console.log("price là : ", routesegmentprices)
+    res.status(200).json({
+      message: "Success",
+      data: price
+    })
+  } catch (err) {
+    console.log("lỗi trong chương trình trên là:  ", err)
+    res.status(500).json({
+      message: "Server error"
+    })
+  }
+}

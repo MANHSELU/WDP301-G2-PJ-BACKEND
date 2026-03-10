@@ -6,12 +6,13 @@ const Route = require("../../model/Routers");
 const Stop = require("../../model/Stops");
 const RouteStop = require("../../model/route_stops");
 const StopLocation = require("../../model/StopLocation");
-const {getRouteDistance} = require("../../util/MapDistance");
-const {geocodeVietnamese} = require("../../util/MapGeo");
+const { getStartToEndDuration } = require("../../util/ApiDistanceStartToEnd");
+const { getRouteDistanceAndDuration } = require("../../util/getRouteDistanceAndDuration");
+const { geocodeVietnamese } = require("../../util/MapGeo");
 const mongoose = require("mongoose");
 const {
   isValidObjectId,
-  // isAdmin, 
+  // isAdmin,
   isValidBusStatus,
   validateSeatLayout,
   isValidAccountStatus,
@@ -20,6 +21,7 @@ const {
 const Route_Stop = require("../../model/route_stops");
 const Stops = require("../../model/Stops");
 const Trip = require("../../model/Trip");
+const { haversine, pointToLineDistance } = require("../../util/geoUtil");
 //get all acccount
 module.exports.getAllAccounts = async (req, res) => {
   try {
@@ -1469,7 +1471,7 @@ module.exports.deleteLocation = async (req, res) => {
       message: "Internal server error",
     });
   }
-}
+};
 
 //Hàm lấy tất cả cái loại xe bustype ra
 module.exports.getAllBusType = async (req, res) => {
@@ -1489,7 +1491,7 @@ module.exports.createBus = async (req, res) => {
     }
     const bus = await Bus.findOne({ license_plate });
     if (bus) {
-      return res.status(409).json({ message: "Xe đã tồn tại" });
+      return res.status(409).json({ message: "Biến số xe là bắt buộc" });
     }
     const newBus = await Bus.create({
       license_plate,
@@ -1511,6 +1513,30 @@ module.exports.getAllStops = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 }
+// Hàm tính khoảng cách và thời gian của các trạm thủ công với điểm bắt đầu
+module.exports.getDurationOfHandicraft = async (req, res) => {
+  try {
+    const { start_id, stop_id } = req.query;
+    if (!start_id || !stop_id) {
+      return res.status(404).json({ message: "Các trường là bắt buộc" });
+    }
+    const start = await Stop.findById(start_id);
+    const stop = await Stop.findById(stop_id);
+    const [startLng, startLat] = start.location.coordinates;
+    const [stopLng, stopLat] = stop.location.coordinates;
+    const distanceAndDurationOfHandicraft = await getStartToEndDuration(
+      startLng,
+      startLat,
+      stopLng,
+      stopLat,
+    );
+    const estimated_distance_km = distanceAndDurationOfHandicraft.distance_km;
+    const estimated_duration = distanceAndDurationOfHandicraft.duration_hour;
+    return res.status(200).json({ estimated_duration, estimated_distance_km});
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
 // Hàm lấy ra những stop ở giữa điểm bắt đầu và kết thúc và sort theo order
 module.exports.getSuggestStops = async (req, res) => {
   try {
@@ -1520,64 +1546,77 @@ module.exports.getSuggestStops = async (req, res) => {
     if (!start || !end) {
       return res.status(404).json({ message: "Không tìm thấy điểm" });
     }
-    const startLocation = start.location.coordinates;
     const [lng1, lat1] = start.location.coordinates;
     const [lng2, lat2] = end.location.coordinates;
-    const minLat = Math.min(lat1, lat2);
-    const maxLat = Math.max(lat1, lat2);
-    const minLng = Math.min(lng1, lng2);
-    const maxLng = Math.max(lng1, lng2);
-    // Tính khoảng cách từ start -> end
-    const [endDistanceResult] = await Stops.aggregate([
-      {
-        $geoNear: {
-          near: {
-            type: "Point",
-            coordinates: startLocation,
-          },
-          distanceField: "distance",
-          spherical: true,
-          query: { _id: end._id }, // chỉ tính cho end
-        },
-      },
-    ]);
-    const endDistance = endDistanceResult.distance;
-    const stops = await Stops.aggregate([
-      {
-        $geoNear: {
-          near: {
-            type: "Point",
-            coordinates: startLocation
-          },
-          distanceField: "distance",
-          spherical: true,
-          query: {
-            "location.coordinates.1": { $gte: minLat, $lte: maxLat },
-            "location.coordinates.0": { $gte: minLng, $lte: maxLng },
-            _id: { $nin: [start._id, end._id] }
-          }
-        }
-      },
-      {
-        $match: {
-          distance: { $lte: endDistance }
-        }
-      },
-      {
-        $project: {
-          name: 1,
-          province: 1,
-          distance: 1
-        }
-      }
-    ]);
-    return res.status(200).json({ start, recommendedStops: stops, end });
+    const stops = await Stops.find({
+      _id: { $nin: [start_id, stop_id] },
+    }).select("name province location");
+    const ABx = lng2 - lng1;
+    const ABy = lat2 - lat1;
+    const AB_squared = ABx * ABx + ABy * ABy;
+    const resultStops = stops
+      .map((stop) => {
+        const [lng, lat] = stop.location.coordinates;
+        const ASx = lng - lng1;
+        const ASy = lat - lat1;
+        const t = (ASx * ABx + ASy * ABy) / AB_squared;
+        const distanceToLine = pointToLineDistance(
+          lat,
+          lng,
+          lat1,
+          lng1,
+          lat2,
+          lng2,
+        );
+        const distance_from_start = haversine(lat1, lng1, lat, lng);
+        return {
+          ...stop.toObject(),
+          t,
+          distanceToLine,
+          distance_from_start,
+        };
+      })
+      .filter((stop) => stop.t >= 0 && stop.t <= 1 && stop.distanceToLine < 1)
+      .sort((a, b) => a.distance_from_start - b.distance_from_start);
+    const validStops = resultStops.filter(
+      (s) =>
+        s.location &&
+        s.location.coordinates &&
+        s.location.coordinates.length === 2,
+    );
+    const coords = [
+      `${lng1},${lat1}`,
+      ...validStops.map(
+        (s) => `${s.location.coordinates[0]},${s.location.coordinates[1]}`,
+      ),
+      `${lng2},${lat2}`,
+    ];
+    console.log("coords:", coords);
+    console.log("coords length:", coords.length);
+    const routeData = await getRouteDistanceAndDuration(coords);
+    const legs = routeData.legs;
+
+    let cumulativeDuration = 0;
+    let cumulativeDistance = 0;
+
+    for (let i = 0; i < resultStops.length; i++) {
+      cumulativeDuration += legs[i].duration;
+      cumulativeDistance += legs[i].distance;
+
+      resultStops[i].duration_from_start = cumulativeDuration / 3600;
+      resultStops[i].distance_from_start = cumulativeDistance / 1000;
+    }
+    console.log("Recommend Stops:", resultStops);
+    return res.status(200).json({
+      start,
+      recommendedStops: resultStops,
+      end,
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: error.message });
   }
 };
-
 // Hàm tạo tuyến đường (bao gồm các các stop node và các điểm con)
 // Cơ chế transaction ==> Hoặc là làm TẤT CẢ, hoặc là KHÔNG làm gì cả.
 // Sử dụng transaction cho trường hợp khi sai thứ tự stop_order để tránh trường hợp stop_order sai mà nó vẫn thêm vào tuyến mới (Route)
@@ -1587,36 +1626,46 @@ module.exports.createRoutes = async (req, res) => {
     session.startTransaction();
     const { start_id, stop_id, stops } = req.body;
     if (!start_id || !stop_id || !stops) {
-      return res.status(404).json({ message: "Các trường nhập là bắt buộc" });
+      return res.status(400).json({ message: "Các trường nhập là bắt buộc" });
     }
     const startStop = await Stop.findById(start_id);
     const endStop = await Stop.findById(stop_id);
-    const [startLng,startLat] = startStop.location.coordinates;
-    const [endLng,endLat] = endStop.location.coordinates;
-    const routeInformation = await getRouteDistance(startLng,startLat,endLng,endLat);
+    const [startLng, startLat] = startStop.location.coordinates;
+    const [endLng, endLat] = endStop.location.coordinates;
+    const routeInformation =
+      await getStartToEndDuration(
+        startLng,
+        startLat,
+        endLng,
+        endLat
+      );
     const newRoute = await Route.create(
-      {
-        start_id,
-        stop_id,
-        distance_km: routeInformation.distance_km,
-        estimated_duration: routeInformation.duration_hour,
-      },
+      [
+        {
+          start_id,
+          stop_id,
+          distance_km: routeInformation.distance_km,
+          estimated_duration: routeInformation.duration_hour,
+        },
+      ],
+      { session }
     );
-    await newRoute.save(session);
+    const routeId = newRoute[0]._id;
     const newRoute_Stop = stops.map((s) => ({
-      route_id: newRoute._id,
+      route_id: routeId,
       stop_id: s.stop_id,
       stop_order: s.stop_order,
+      estimated_time: s.duration_from_start,
     }));
     await Route_Stop.insertMany(newRoute_Stop, { session });
     await session.commitTransaction();
     return res.status(201).json({ message: "Tạo tuyến thành công" });
   } catch (error) {
-    await session.abortTransaction(); // rollback khi lỗi, hủy toàn bộ transaction, trả về lại trạng thái lúc đầu.
+    await session.abortTransaction();
     if (error.code === 110000) {
-      return res
-        .status(400)
-        .json({ message: "Thứ tự các điểm bị trùng trong cùng 1 tuyến" });
+      return res.status(400).json({
+        message: "Thứ tự các điểm bị trùng trong cùng 1 tuyến",
+      });
     }
     return res.status(500).json({ message: error.message });
   } finally {
@@ -1625,60 +1674,62 @@ module.exports.createRoutes = async (req, res) => {
 };
 // Hàm lấy vị trí Stop Location
 module.exports.getGeoOfStopLocation = async (req, res) => {
+  console.log("chạy vào lấy vị trí")
   try {
     const { location_name } = req.body;
     if (!location_name) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
+    console.log("1")
     const coordinates = await geocodeVietnamese(location_name);
     if (!coordinates) {
       return res.status(404).json({ message: "Không tìm thấy địa điểm" });
     }
+    console.log("2")
     return res.status(200).json({ coordinates });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
 // Hàm tạo Stop location;
-module.exports.createStopLocation = async (req,res) =>{
+module.exports.createStopLocation = async (req, res) => {
   try {
-      const {stop_id,location_name,address,location} = req.body;
-      if(!stop_id || !location_name || !address || !location){
-        return res.status(400).json({message: "Các trường là bắt buộc"});
-      };
-      const stopLocation = await StopLocation.findOne({location_name});
-      if(stopLocation){
-        return res.status(400).json({message: "Vị trí lên xuống này đã tồn tại"})
-      };
-      const newStopLocation = await StopLocation.create({
-        stop_id,
-        location_name,
-        address,
-        location,
-      });
-      await newStopLocation.save();
-      return res.status(201).json({message: "Tạo vị trí lên xuống thành công"});
+    const { stop_id, location_name, address, location } = req.body;
+    if (!stop_id || !location_name || !address || !location) {
+      return res.status(400).json({ message: "Các trường là bắt buộc" });
+    };
+    const stopLocation = await StopLocation.findOne({ location_name });
+    if (stopLocation) {
+      return res.status(400).json({ message: "Vị trí lên xuống này đã tồn tại" })
+    };
+    const newStopLocation = await StopLocation.create({
+      stop_id,
+      location_name,
+      address,
+      location,
+    });
+    await newStopLocation.save();
+    return res.status(201).json({ message: "Tạo vị trí lên xuống thành công" });
   } catch (error) {
-      console.error("FULL ERROR:", error);
-      return res.status(500).json({message: error.message});
+    console.error("FULL ERROR:", error);
+    return res.status(500).json({ message: error.message });
   }
 };
 // Hàm get all route
-  module.exports.getAllRoutes = async (req,res) =>{
-    try {
-    const allRoutes = await Route.find().select("start_id stop_id estimated_duration").populate("start_id","name").populate("stop_id","name");
+module.exports.getAllRoutes = async (req, res) => {
+  try {
+    const allRoutes = await Route.find().select("start_id stop_id estimated_duration").populate("start_id", "name").populate("stop_id", "name");
     return res.status(200).json(allRoutes);
-    } catch (error) {
-    return res.status(500).json({message: error.message});
-    }
-  };
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
 // Hàm lấy tất cả xe đã check conflict lịch
-  module.exports.getAllBuses = async (req, res) => {
+module.exports.getAllBuses = async (req, res) => {
   try {
     const { departure_time, arrival_time } = req.query;
     if (!departure_time || !arrival_time) {
       const allBuses = await Bus.find()
-        .select("bus_type_id license_plate")
         .populate("bus_type_id", "name");
       return res.status(200).json(allBuses);
     }
@@ -1712,7 +1763,6 @@ module.exports.createStopLocation = async (req,res) =>{
     return res.status(500).json({ message: error.message });
   }
 };
-
 // Hàm lấy tài xế đã check conflict lịch
 module.exports.getAvailableDrivers = async (req, res) => {
   try {
@@ -1790,7 +1840,7 @@ module.exports.searchAssistantDriver = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy role ASSISTANT" });
     }
     const assistants = await User.find({
-      role: assistantRole._id,          
+      role: assistantRole._id,
       name: { $regex: keyword.trim(), $options: "i" },
     })
       .select("name email phone")
@@ -1825,37 +1875,37 @@ module.exports.searchAssistantDriver = async (req, res) => {
   }
 };
 // Hàm tạo Trip;
-module.exports.createTrips = async (req,res) =>{
+module.exports.createTrips = async (req, res) => {
   try {
-    const {route_id,bus_id,drivers,assistant_id,departure_time,arrival_time,scheduled_duration} = req.body;
-    if(!route_id || !bus_id || !drivers || !assistant_id || !departure_time || !arrival_time|| !scheduled_duration){
-      return res.status(400).json({message: "Các trường là bắt buộc"});
+    const { route_id, bus_id, drivers, assistant_id, departure_time, arrival_time, scheduled_duration } = req.body;
+    if (!route_id || !bus_id || !drivers || !assistant_id || !departure_time || !arrival_time || !scheduled_duration) {
+      return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
     const route = await Route.findById(route_id);
-    if(!route){
-      return res.status(404).json({message: "Tuyến không tồn tại"});
+    if (!route) {
+      return res.status(404).json({ message: "Tuyến không tồn tại" });
     };
     const bus = await Bus.findById(bus_id);
-    if(!bus){
-      return res.status(404).json({message: "Xe không tồn tại"});
+    if (!bus) {
+      return res.status(404).json({ message: "Xe không tồn tại" });
     };
     const assistant = await User.findById(assistant_id);
-      if(!assistant || assistant.role != "696ca255bc014a7a76f7caa8"){
-        return res.status(404).json({message: "Phụ xe không tồn tại"})
-      }
-    for(let d of drivers){
+    if (!assistant || assistant.role != "696ca255bc014a7a76f7caa8") {
+      return res.status(404).json({ message: "Phụ xe không tồn tại" })
+    }
+    for (let d of drivers) {
       const driver = await User.findById(d.driver_id);
-      if(!driver || driver.role != "696ca255bc014a7a76f7caa7"){
-        return res.status(404).json({message: "Tài xế không tồn tại"})
+      if (!driver || driver.role != "696ca255bc014a7a76f7caa7") {
+        return res.status(404).json({ message: "Tài xế không tồn tại" })
       }
-  if (
-    new Date(d.shift_start) < new Date(departure_time) ||
-    new Date(d.shift_end) > new Date(arrival_time)
-  ) {
-    return res.status(400).json({
-      message: `Ca làm của tài xế ${driver.name} không nằm trong thời gian chuyến.`,
-    });
-  }
+      if (
+        new Date(d.shift_start) < new Date(departure_time) ||
+        new Date(d.shift_end) > new Date(arrival_time)
+      ) {
+        return res.status(400).json({
+          message: `Ca làm của tài xế ${driver.name} không nằm trong thời gian chuyến.`,
+        });
+      }
     };
 
     const trip = new Trip({
@@ -1870,19 +1920,19 @@ module.exports.createTrips = async (req,res) =>{
     await trip.save();
     return res.status(201).json({ message: "Tạo chuyến thành công" });
   } catch (error) {
-    return res.status(500).json({message: error.message});
+    return res.status(500).json({ message: error.message });
   }
 }
 // Hàm tạo tài khoản nhân viên  
-module.exports.createStaffAccount = async (req,res) =>{
+module.exports.createStaffAccount = async (req, res) => {
   try {
-    const {name,phone,password,role} = req.body;
-    if(!name || !phone || !password || !role){
-      return res.status(404).json({message : "Các trường nhập là bắt buộc"})
+    const { name, phone, password, role } = req.body;
+    if (!name || !phone || !password || !role) {
+      return res.status(404).json({ message: "Các trường nhập là bắt buộc" })
     }
-    const existedStaff = await User.findOne({phone});
-    if(existedStaff){
-      return res.status(400).json({message: "Số điện thoại đã được đăng kí"});
+    const existedStaff = await User.findOne({ phone });
+    if (existedStaff) {
+      return res.status(400).json({ message: "Số điện thoại đã được đăng kí" });
     }
     const newStaff = await User.create({
       name,
@@ -1891,12 +1941,20 @@ module.exports.createStaffAccount = async (req,res) =>{
       role,
     });
     await newStaff.save();
-    return res.status(201).json({message: "Tạo tài khoản nhân viên thành công"});
+    return res.status(201).json({ message: "Tạo tài khoản nhân viên thành công" });
   } catch (error) {
-    return res.status(500).json({message: error.message});
+    return res.status(500).json({ message: error.message });
   }
 };
-
+module.exports.searchStopsTimeTable = async (req, res) => {
+  try {
+    const { keyword } = req.query;
+    const searchStops = await Stops.find({ province: { $regex: keyword, $options: "i" } }).select("-name");
+    return res.status(200).json(searchStops);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
 
 
 
