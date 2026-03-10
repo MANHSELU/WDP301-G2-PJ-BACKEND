@@ -1901,3 +1901,58 @@ module.exports.searchStopsTimeTable = async (req, res) => {
 
 
 
+module.exports.updateAccount = async (req, res) => {
+  console.log("chạy vào update")
+  try {
+    const { id } = req.params;
+    console.log("id là : ", id)
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid account ID format" });
+    }
+
+    const { name, phone, role, status } = req.body;
+
+    const account = await User.findById(id);
+    if (!account) {
+      return res.status(404).json({ success: false, message: "Account not found" });
+    }
+
+    if (phone && phone !== account.phone) {
+      const duplicate = await User.findOne({ phone, _id: { $ne: id } });
+      if (duplicate) {
+        return res.status(400).json({ success: false, message: "Số điện thoại đã được đăng ký" });
+      }
+    }
+
+    const updateData = {};
+    if (name) updateData.name = name.trim();
+    if (phone) updateData.phone = phone.trim();
+    if (status && ["active", "inactive", "banned"].includes(status)) updateData.status = status;
+
+    if (role) {
+      // Validate role if it's an object ID or string. Assuming ID here based on the front end sending roleKey.
+      if (!isValidObjectId(role)) {
+        // find by name if it's not ID
+        const roleDoc = await Role.findOne({ name: role.trim().toUpperCase() });
+        if (roleDoc) updateData.role = roleDoc._id;
+      } else {
+        updateData.role = role;
+      }
+    }
+
+    const updatedAccount = await User.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true }
+    ).populate("role", "name description").select("-password -refreshToken");
+
+    return res.status(200).json({
+      success: true,
+      message: "Account updated successfully",
+      data: updatedAccount,
+    });
+  } catch (error) {
+    console.error("❌ Error in updateAccount:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+}
