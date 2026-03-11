@@ -6,7 +6,7 @@ const adminController = require("../../controller/Admin/admin.controller");
 router.get("/accounts", adminController.getAllAccounts);
 router.post("/accounts", adminController.createStaffAccount);
 router.get("/accounts/:id", adminController.getAccountById);
-router.patch("/accounts/:id", adminController.updateAccount);
+// router.patch("/accounts/:id", adminController.updateAccount);
 
 // ==================== BUS ROUTES ====================
 router.get("/buses", adminController.getAllBuses);
