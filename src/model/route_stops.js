@@ -22,7 +22,7 @@ const RouteStopSchema = new mongoose.Schema(
         },
         estimated_time: {
             type: Number,
-            required: false, // VD: "08 tiếng " // Thời gian ước tính từ điếm xuất phát đến điểm node 
+            required: true, // VD: "08 tiếng " // Thời gian ước tính từ điếm xuất phát đến điểm node 
         },
         is_pickup: {
             type: Boolean,
@@ -38,4 +38,3 @@ const RouteStopSchema = new mongoose.Schema(
 RouteStopSchema.index({ route_id: 1, stop_order: 1 }, { unique: true });
 
 module.exports = mongoose.model("RouteStop", RouteStopSchema);
-

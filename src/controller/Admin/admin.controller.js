@@ -6,7 +6,8 @@ const Route = require("../../model/Routers");
 const Stop = require("../../model/Stops");
 const RouteStop = require("../../model/route_stops");
 const StopLocation = require("../../model/StopLocation");
-const { getRouteDistance } = require("../../util/MapDistance");
+const { getStartToEndDuration } = require("../../util/ApiDistanceStartToEnd");
+const { getRouteDistanceAndDuration } = require("../../util/getRouteDistanceAndDuration");
 const { geocodeVietnamese } = require("../../util/MapGeo");
 const mongoose = require("mongoose");
 const {
@@ -20,6 +21,7 @@ const {
 const Route_Stop = require("../../model/route_stops");
 const Stops = require("../../model/Stops");
 const Trip = require("../../model/Trip");
+const { haversine, pointToLineDistance } = require("../../util/geoUtil");
 //get all acccount
 module.exports.getAllAccounts = async (req, res) => {
   try {
@@ -1502,14 +1504,35 @@ module.exports.createBus = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
-// Hàm lấy tất cả các điểm stop
-module.exports.searchStops = async (req, res) => {
+// Hàm lấy tất cả các điểm stop 
+module.exports.getAllStops = async (req, res) => {
   try {
-    const { keyword } = req.query;
-    const searchStops = await Stops.find({
-      name: { $regex: keyword, $options: "i" },
-    });
+    const searchStops = await Stops.find().select("name province");
     return res.status(200).json(searchStops);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
+// Hàm tính khoảng cách và thời gian của các trạm thủ công với điểm bắt đầu
+module.exports.getDurationOfHandicraft = async (req, res) => {
+  try {
+    const { start_id, stop_id } = req.query;
+    if (!start_id || !stop_id) {
+      return res.status(404).json({ message: "Các trường là bắt buộc" });
+    }
+    const start = await Stop.findById(start_id);
+    const stop = await Stop.findById(stop_id);
+    const [startLng, startLat] = start.location.coordinates;
+    const [stopLng, stopLat] = stop.location.coordinates;
+    const distanceAndDurationOfHandicraft = await getStartToEndDuration(
+      startLng,
+      startLat,
+      stopLng,
+      stopLat,
+    );
+    const estimated_distance_km = distanceAndDurationOfHandicraft.distance_km;
+    const estimated_duration = distanceAndDurationOfHandicraft.duration_hour;
+    return res.status(200).json({ estimated_duration, estimated_distance_km});
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -1523,64 +1546,77 @@ module.exports.getSuggestStops = async (req, res) => {
     if (!start || !end) {
       return res.status(404).json({ message: "Không tìm thấy điểm" });
     }
-    const startLocation = start.location.coordinates;
     const [lng1, lat1] = start.location.coordinates;
     const [lng2, lat2] = end.location.coordinates;
-    const minLat = Math.min(lat1, lat2);
-    const maxLat = Math.max(lat1, lat2);
-    const minLng = Math.min(lng1, lng2);
-    const maxLng = Math.max(lng1, lng2);
-    // Tính khoảng cách từ start -> end
-    const [endDistanceResult] = await Stops.aggregate([
-      {
-        $geoNear: {
-          near: {
-            type: "Point",
-            coordinates: startLocation,
-          },
-          distanceField: "distance",
-          spherical: true,
-          query: { _id: end._id }, // chỉ tính cho end
-        },
-      },
-    ]);
-    const endDistance = endDistanceResult.distance;
-    const stops = await Stops.aggregate([
-      {
-        $geoNear: {
-          near: {
-            type: "Point",
-            coordinates: startLocation,
-          },
-          distanceField: "distance",
-          spherical: true,
-          query: {
-            "location.coordinates.1": { $gte: minLat, $lte: maxLat },
-            "location.coordinates.0": { $gte: minLng, $lte: maxLng },
-            _id: { $nin: [start._id, end._id] },
-          },
-        },
-      },
-      {
-        $match: {
-          distance: { $lte: endDistance },
-        },
-      },
-      {
-        $project: {
-          name: 1,
-          province: 1,
-          distance: 1,
-        },
-      },
-    ]);
-    return res.status(200).json({ start, recommendedStops: stops, end });
+    const stops = await Stops.find({
+      _id: { $nin: [start_id, stop_id] },
+    }).select("name province location");
+    const ABx = lng2 - lng1;
+    const ABy = lat2 - lat1;
+    const AB_squared = ABx * ABx + ABy * ABy;
+    const resultStops = stops
+      .map((stop) => {
+        const [lng, lat] = stop.location.coordinates;
+        const ASx = lng - lng1;
+        const ASy = lat - lat1;
+        const t = (ASx * ABx + ASy * ABy) / AB_squared;
+        const distanceToLine = pointToLineDistance(
+          lat,
+          lng,
+          lat1,
+          lng1,
+          lat2,
+          lng2,
+        );
+        const distance_from_start = haversine(lat1, lng1, lat, lng);
+        return {
+          ...stop.toObject(),
+          t,
+          distanceToLine,
+          distance_from_start,
+        };
+      })
+      .filter((stop) => stop.t >= 0 && stop.t <= 1 && stop.distanceToLine < 1)
+      .sort((a, b) => a.distance_from_start - b.distance_from_start);
+    const validStops = resultStops.filter(
+      (s) =>
+        s.location &&
+        s.location.coordinates &&
+        s.location.coordinates.length === 2,
+    );
+    const coords = [
+      `${lng1},${lat1}`,
+      ...validStops.map(
+        (s) => `${s.location.coordinates[0]},${s.location.coordinates[1]}`,
+      ),
+      `${lng2},${lat2}`,
+    ];
+    console.log("coords:", coords);
+    console.log("coords length:", coords.length);
+    const routeData = await getRouteDistanceAndDuration(coords);
+    const legs = routeData.legs;
+
+    let cumulativeDuration = 0;
+    let cumulativeDistance = 0;
+
+    for (let i = 0; i < resultStops.length; i++) {
+      cumulativeDuration += legs[i].duration;
+      cumulativeDistance += legs[i].distance;
+
+      resultStops[i].duration_from_start = cumulativeDuration / 3600;
+      resultStops[i].distance_from_start = cumulativeDistance / 1000;
+    }
+    console.log("Recommend Stops:", resultStops);
+    return res.status(200).json({
+      start,
+      recommendedStops: resultStops,
+      end,
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: error.message });
   }
 };
-
 // Hàm tạo tuyến đường (bao gồm các các stop node và các điểm con)
 // Cơ chế transaction ==> Hoặc là làm TẤT CẢ, hoặc là KHÔNG làm gì cả.
 // Sử dụng transaction cho trường hợp khi sai thứ tự stop_order để tránh trường hợp stop_order sai mà nó vẫn thêm vào tuyến mới (Route)
@@ -1590,36 +1626,46 @@ module.exports.createRoutes = async (req, res) => {
     session.startTransaction();
     const { start_id, stop_id, stops } = req.body;
     if (!start_id || !stop_id || !stops) {
-      return res.status(404).json({ message: "Các trường nhập là bắt buộc" });
+      return res.status(400).json({ message: "Các trường nhập là bắt buộc" });
     }
     const startStop = await Stop.findById(start_id);
     const endStop = await Stop.findById(stop_id);
     const [startLng, startLat] = startStop.location.coordinates;
     const [endLng, endLat] = endStop.location.coordinates;
-    const routeInformation = await getRouteDistance(startLng, startLat, endLng, endLat);
+    const routeInformation =
+      await getStartToEndDuration(
+        startLng,
+        startLat,
+        endLng,
+        endLat
+      );
     const newRoute = await Route.create(
-      {
-        start_id,
-        stop_id,
-        distance_km: routeInformation.distance_km,
-        estimated_duration: routeInformation.duration_hour,
-      },
+      [
+        {
+          start_id,
+          stop_id,
+          distance_km: routeInformation.distance_km,
+          estimated_duration: routeInformation.duration_hour,
+        },
+      ],
+      { session }
     );
-    await newRoute.save(session);
+    const routeId = newRoute[0]._id;
     const newRoute_Stop = stops.map((s) => ({
-      route_id: newRoute._id,
+      route_id: routeId,
       stop_id: s.stop_id,
       stop_order: s.stop_order,
+      estimated_time: s.duration_from_start,
     }));
     await Route_Stop.insertMany(newRoute_Stop, { session });
     await session.commitTransaction();
     return res.status(201).json({ message: "Tạo tuyến thành công" });
   } catch (error) {
-    await session.abortTransaction(); // rollback khi lỗi, hủy toàn bộ transaction, trả về lại trạng thái lúc đầu.
+    await session.abortTransaction();
     if (error.code === 110000) {
-      return res
-        .status(400)
-        .json({ message: "Thứ tự các điểm bị trùng trong cùng 1 tuyến" });
+      return res.status(400).json({
+        message: "Thứ tự các điểm bị trùng trong cùng 1 tuyến",
+      });
     }
     return res.status(500).json({ message: error.message });
   } finally {
@@ -1718,56 +1764,67 @@ module.exports.getAllBuses = async (req, res) => {
   }
 };
 // Hàm lấy tài xế đã check conflict lịch
-module.exports.searchDrivers = async (req, res) => {
+module.exports.getAvailableDrivers = async (req, res) => {
   try {
-    const { keyword, shift_start, shift_end } = req.query;
-    if (!keyword || keyword.trim().length < 2) {
+    const { shift_start, shift_end } = req.query;
+    if (!shift_start || !shift_end) {
       return res.status(400).json({
-        message: "Keyword phải có ít nhất 2 ký tự",
+        message: "Phải truyền shift_start và shift_end",
       });
-    }
+    };
+    const start = new Date(shift_start);
+    const end = new Date(shift_end);
+    if (start >= end) {
+      return res.status(400).json({
+        message: "shift_end phải lớn hơn shift_start",
+      });
+    };
     const driverRole = await Role.findOne({ name: "DRIVER" }).lean();
     if (!driverRole) {
-      return res.status(404).json({ message: "Không tìm thấy role DRIVER" });
-    }
-    const drivers = await User.find({
-      role: driverRole._id,
-      name: { $regex: keyword.trim(), $options: "i" },
-    })
-      .select("name email phone")
-      .lean();
-    if (!shift_start || !shift_end) {
-      return res.status(200).json(drivers);
-    }
-    const shiftStartDate = new Date(shift_start);
-    const shiftEndDate = new Date(shift_end);
-    const conflictingTrips = await Trip.find({
+      return res.status(404).json({
+        message: "Không tìm thấy role DRIVER",
+      });
+    };
+    const busyTrips = await Trip.find({
       status: { $in: ["SCHEDULED", "RUNNING"] },
-      "drivers.shift_start": { $exists: true },
+      drivers: {
+        $elemMatch: {
+          $or: [
+            {
+              actual_shift_start: { $lt: end },
+              actual_shift_end: { $gt: start },
+            },
+            {
+              actual_shift_start: null,
+              shift_start: { $lt: end },
+              shift_end: { $gt: start },
+            },
+          ],
+        },
+      },
     }).select("drivers");
     const busyDriverIds = new Set();
-    conflictingTrips.forEach((trip) => {
-      trip.drivers.forEach((driver) => {
-        const driverShiftStart = new Date(driver.shift_start);
-        const driverShiftEnd = new Date(driver.shift_end);
-        const hasConflict =
-          (shiftStartDate >= driverShiftStart && shiftStartDate < driverShiftEnd) ||
-          (shiftEndDate > driverShiftStart && shiftEndDate <= driverShiftEnd) ||
-          (shiftStartDate <= driverShiftStart && shiftEndDate >= driverShiftEnd);
-
-        if (hasConflict) {
-          busyDriverIds.add(driver.driver_id.toString());
+    busyTrips.forEach((trip) => {
+      trip.drivers.forEach((d) => {
+        const realStart = d.actual_shift_start || d.shift_start;
+        const realEnd = d.actual_shift_end || d.shift_end;
+        if (realStart < end && realEnd > start) {
+          busyDriverIds.add(d.driver_id.toString());
         }
       });
     });
-    const availableDrivers = drivers.filter(
-      (driver) => !busyDriverIds.has(driver._id.toString()),
-    );
+    const availableDrivers = await User.find({
+      role: driverRole._id,
+      _id: { $nin: Array.from(busyDriverIds) },
+    })
+      .select("name email phone")
+      .lean();
     return res.status(200).json(availableDrivers);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
+
 // hàm search lơ xe 
 module.exports.searchAssistantDriver = async (req, res) => {
   try {
