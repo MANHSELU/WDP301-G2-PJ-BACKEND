@@ -1632,18 +1632,18 @@ module.exports.createRoutes = async (req, res) => {
 };
 // Hàm lấy vị trí Stop Location
 module.exports.getGeoOfStopLocation = async (req, res) => {
-  console.log("chạy vào lấy vị trí")
+  console.log("chạy vào lấy vị trí");
   try {
     const { location_name } = req.body;
     if (!location_name) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
-    console.log("1")
+    console.log("1");
     const coordinates = await geocodeVietnamese(location_name);
     if (!coordinates) {
       return res.status(404).json({ message: "Không tìm thấy địa điểm" });
     }
-    console.log("2")
+    console.log("2");
     return res.status(200).json({ coordinates });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -1692,8 +1692,7 @@ module.exports.getAllBuses = async (req, res) => {
   try {
     const { departure_time, arrival_time } = req.query;
     if (!departure_time || !arrival_time) {
-      const allBuses = await Bus.find()
-        .populate("bus_type_id", "name");
+      const allBuses = await Bus.find().populate("bus_type_id", "name");
       return res.status(200).json(allBuses);
     }
     const departureDate = new Date(departure_time);
@@ -2039,7 +2038,7 @@ module.exports.getTripById = async (req, res) => {
   }
 };
 
-// --- UPDATE TRIP ---
+//UPdate trip
 module.exports.updateTrip = async (req, res) => {
   try {
     const { id } = req.params;
@@ -2070,6 +2069,7 @@ module.exports.updateTrip = async (req, res) => {
 
     const updateData = {};
 
+    // route & bus basic validation
     if (route_id !== undefined) {
       if (!isValidObjectId(route_id)) {
         return res
@@ -2088,58 +2088,124 @@ module.exports.updateTrip = async (req, res) => {
       updateData.bus_id = bus_id;
     }
 
+    // drivers: expect array of { driver_id, shift_start, shift_end, status? }
     if (drivers !== undefined) {
       if (!Array.isArray(drivers)) {
         return res
           .status(400)
           .json({ success: false, message: "drivers must be an array" });
       }
-      // Validate each driver item
+
+      // find DRIVER role id if exists (optional)
+      const driverRoleDoc = await Role.findOne({ name: "DRIVER" }).lean();
+
       const parsedDrivers = [];
       for (const d of drivers) {
         if (!d.driver_id || !isValidObjectId(d.driver_id)) {
+          return res.status(400).json({
+            success: false,
+            message: "Each driver must have a valid driver_id",
+          });
+        }
+
+        const driver = await User.findById(d.driver_id).lean();
+        if (!driver) {
           return res
-            .status(400)
-            .json({ success: false, message: "Invalid driver_id in drivers" });
+            .status(404)
+            .json({
+              success: false,
+              message: `Driver ${d.driver_id} not found`,
+            });
         }
-        const parsed = {
-          driver_id: d.driver_id,
-        };
-        if (d.shift_start) {
-          const s = new Date(d.shift_start);
-          if (isNaN(s))
+
+        if (
+          driverRoleDoc &&
+          String(driver.role) !== String(driverRoleDoc._id)
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: `User ${driver._id} is not a DRIVER`,
+          });
+        }
+
+        const parsed = { driver_id: d.driver_id };
+
+        if (d.shift_start !== undefined) {
+          const ss = new Date(d.shift_start);
+          if (isNaN(ss)) {
             return res
               .status(400)
-              .json({ success: false, message: "Invalid shift_start" });
-          parsed.shift_start = s;
-        } else {
-          // keep existing if not provided? we'll require providing dates for each driver in update array
-          parsed.shift_start = d.shift_start || null;
+              .json({
+                success: false,
+                message: "Invalid shift_start for driver",
+              });
+          }
+          parsed.shift_start = ss;
+        } else if (d.shift_start === undefined && d.shift_end !== undefined) {
+          // allow partial but validate later against trip times
         }
-        if (d.shift_end) {
-          const e = new Date(d.shift_end);
-          if (isNaN(e))
+
+        if (d.shift_end !== undefined) {
+          const se = new Date(d.shift_end);
+          if (isNaN(se)) {
             return res
               .status(400)
-              .json({ success: false, message: "Invalid shift_end" });
-          parsed.shift_end = e;
-        } else {
-          parsed.shift_end = d.shift_end || null;
+              .json({
+                success: false,
+                message: "Invalid shift_end for driver",
+              });
+          }
+          parsed.shift_end = se;
         }
+
+        if (d.status !== undefined) {
+          if (!["PENDING", "RUNNING", "DONE"].includes(d.status)) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid driver status (PENDING|RUNNING|DONE)",
+            });
+          }
+          parsed.status = d.status;
+        }
+
         parsedDrivers.push(parsed);
       }
+
       updateData.drivers = parsedDrivers;
     }
 
+    // assistant validation (allow null to unset)
     if (assistant_id !== undefined) {
       if (assistant_id !== null && !isValidObjectId(assistant_id)) {
         return res
           .status(400)
           .json({ success: false, message: "Invalid assistant_id" });
       }
+      if (assistant_id !== null) {
+        const assistant = await User.findById(assistant_id).lean();
+        if (!assistant) {
+          return res
+            .status(404)
+            .json({ success: false, message: "Assistant not found" });
+        }
+        const assistantRoleDoc = await Role.findOne({
+          name: "ASSISTANT",
+        }).lean();
+        if (
+          assistantRoleDoc &&
+          String(assistant.role) !== String(assistantRoleDoc._id)
+        ) {
+          return res
+            .status(400)
+            .json({ success: false, message: "User is not an ASSISTANT" });
+        }
+      }
       updateData.assistant_id = assistant_id;
     }
 
+    // times
+    let newDeparture = undefined;
+    let newArrival = undefined;
     if (departure_time !== undefined) {
       const dt = new Date(departure_time);
       if (isNaN(dt))
@@ -2147,8 +2213,8 @@ module.exports.updateTrip = async (req, res) => {
           .status(400)
           .json({ success: false, message: "Invalid departure_time" });
       updateData.departure_time = dt;
+      newDeparture = dt;
     }
-
     if (arrival_time !== undefined) {
       const at = new Date(arrival_time);
       if (isNaN(at))
@@ -2156,8 +2222,50 @@ module.exports.updateTrip = async (req, res) => {
           .status(400)
           .json({ success: false, message: "Invalid arrival_time" });
       updateData.arrival_time = at;
+      newArrival = at;
     }
 
+    // if only one of departure/arrival provided, ensure logical order using existing times
+    const effectiveDeparture = newDeparture || existing.departure_time;
+    const effectiveArrival = newArrival || existing.arrival_time;
+    if (
+      effectiveDeparture &&
+      effectiveArrival &&
+      effectiveArrival <= effectiveDeparture
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "arrival_time must be after departure_time",
+      });
+    }
+
+    // if drivers provided, ensure driver shifts lie within trip time (use effective times)
+    if (updateData.drivers) {
+      for (const d of updateData.drivers) {
+        if (d.shift_start && d.shift_end) {
+          if (effectiveDeparture && d.shift_start < effectiveDeparture) {
+            return res.status(400).json({
+              success: false,
+              message: `Driver ${d.driver_id} shift_start is before trip departure_time`,
+            });
+          }
+          if (effectiveArrival && d.shift_end > effectiveArrival) {
+            return res.status(400).json({
+              success: false,
+              message: `Driver ${d.driver_id} shift_end is after trip arrival_time`,
+            });
+          }
+          if (d.shift_end <= d.shift_start) {
+            return res.status(400).json({
+              success: false,
+              message: `Driver ${d.driver_id} shift_end must be after shift_start`,
+            });
+          }
+        }
+      }
+    }
+
+    // scheduled distance/duration validation
     if (scheduled_distance !== undefined) {
       const sd = Number(scheduled_distance);
       if (isNaN(sd) || sd < 0)
@@ -2176,12 +2284,13 @@ module.exports.updateTrip = async (req, res) => {
       updateData.scheduled_duration = sdur;
     }
 
+    // status
     if (status !== undefined) {
       const allowed = ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"];
       if (!allowed.includes(status))
         return res
           .status(400)
-          .json({ success: false, message: "Invalid status" });
+          .json({ success: false, message: "Invalid status value" });
       updateData.status = status;
     }
 
@@ -2211,13 +2320,11 @@ module.exports.updateTrip = async (req, res) => {
       .populate("assistant_id", "name phone")
       .lean();
 
-    return res
-      .status(200)
-      .json({
-        success: true,
-        message: "Trip updated successfully",
-        data: updated,
-      });
+    return res.status(200).json({
+      success: true,
+      message: "Trip updated successfully",
+      data: updated,
+    });
   } catch (error) {
     console.error("❌ Error in updateTrip:", error);
     if (error.name === "ValidationError") {
