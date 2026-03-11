@@ -573,123 +573,208 @@ module.exports.searchRoutes = async (req, res) => {
   }
 };
 // son làm 
+// module.exports.getSearch = async (req, res) => {
+//   try {
+//     console.log("chạy vào search")
+//     const { nodeId_start, nodeId_end, date } = req.body;
+//     console.log("date là: ", date)
+//     console.log("nodeid start là : ", nodeId_start)
+//     if (!nodeId_start || !nodeId_end) {
+//       return res.status(400).json({
+//         message: "Thiếu nodeId_start hoặc nodeId_end",
+//       });
+//     }
+//     // 1️⃣ Tìm tất cả routeStop của start node
+//     const startStops = await RouteStop.find({
+//       stop_id: nodeId_start,
+//       is_pickup: true,
+//     });
+
+//     if (!startStops.length) {
+//       return res.json([]);
+//     }
+
+//     const results = [];
+
+//     // 2️⃣ Với mỗi start, kiểm tra có end trong cùng route không
+//     for (const start of startStops) {
+//       const endStop = await RouteStop.findOne({
+//         route_id: start.route_id,
+//         stop_id: nodeId_end,
+//         stop_order: { $gt: start.stop_order }, // đảm bảo đúng chiều
+//       });
+//       if (endStop) {
+//         results.push(endStop);
+//       }
+//     }
+//     // check date 
+
+//     const startOfDay = new Date(date);
+//     startOfDay.setUTCHours(0, 0, 0, 0);
+//     const endOfDay = new Date(date);
+//     endOfDay.setUTCHours(23, 59, 59, 999);
+//     console.log(" ngày bắt đầu và kết thúc là : ", startOfDay, endOfDay)
+//     const arr = []
+//     const checkList = []
+//     for (const route of results) {
+//       const node = await Route.findOne({
+//         _id: route.route_id,
+//         is_active: true
+//       })
+//         .populate({
+//           path: "start_id",
+//           select: "province"
+//         })
+//         .populate({
+//           path: "stop_id",
+//           select: "province"
+//         })
+//         ;
+
+//       const checknode = await Trip.findOne({
+//         route_id: route.route_id,
+//         departure_time: {
+//           $gte: startOfDay,
+//           $lte: endOfDay,
+//         }
+//       })
+//       console.log("nodecheck là: ", checknode)
+//       if (!checknode) {
+//         // chuyển qua vòng for tiếp theo
+//         continue
+//       }
+//       checkList.push(checknode)
+//       // if (!checknode) {
+//       //   console.log("rơi vào không có ")
+//       //   return res.json({
+//       //     arr
+//       //   })
+//       // }
+//       // const node = await Trip.findOne({
+//       //   route_id: route.route_id,
+//       // })
+//       //   .populate({
+//       //     path: "route_id",
+//       //     populate: [
+//       //       {
+//       //         path: "start_id",
+//       //         select: "province",
+//       //       },
+//       //       {
+//       //         path: "stop_id",
+//       //         select: "province",
+//       //       },
+//       //     ],
+//       //   })
+//       //   .populate({
+//       //     path: "bus_id",
+//       //     populate: {
+//       //       path: "bus_type_id"
+//       //     },
+//       //     select: "-seat_layout"
+//       //   })
+//       //   .select("-drivers -assistant_id")
+//       console.log("4")
+//       if (node) {
+//         arr.push(node)
+//       }
+//     }
+//     if (checkList.length == 0) {
+//       return res.json([]);
+//     }
+//     return res.json(arr);
+//   } catch (err) {
+//     console.log("Lỗi của chương trình là:", err);
+//     return res.status(500).json({
+//       message: "Lỗi server",
+//     });
+//   }
+// };
+
 module.exports.getSearch = async (req, res) => {
   try {
-    console.log("chạy vào search")
     const { nodeId_start, nodeId_end, date } = req.body;
-    console.log("date là: ", date)
-    console.log("nodeid start là : ", nodeId_start)
-    if (!nodeId_start || !nodeId_end) {
-      return res.status(400).json({
-        message: "Thiếu nodeId_start hoặc nodeId_end",
-      });
-    }
-    console.log("1")
-    // 1️⃣ Tìm tất cả routeStop của start node
-    const startStops = await RouteStop.find({
-      stop_id: nodeId_start,
-      is_pickup: true,
-    });
 
-    if (!startStops.length) {
-      return res.json([]);
+    if (!nodeId_start || !nodeId_end || !date) {
+      return res.status(400).json({ message: "Thiếu nodeId_start, nodeId_end hoặc date" });
     }
+
+    // ── 1. Tìm tất cả RouteStop là điểm ĐÓN khách (nodeId_start) ────────────
+    const startStops = await RouteStop.find({ stop_id: nodeId_start, is_pickup: true });
+    if (!startStops.length) return res.json({ success: true, data: [] });
+
+    // ── 2. Với mỗi startStop, tìm endStop cùng route + đúng chiều ────────────
+    const validPairs = [];
+    for (const startStop of startStops) {
+      const endStop = await RouteStop.findOne({
+        route_id: startStop.route_id,
+        stop_id: nodeId_end,
+        stop_order: { $gt: startStop.stop_order },
+      });
+      if (endStop) validPairs.push({ startStop, endStop });
+    }
+    if (!validPairs.length) return res.json({ success: true, data: [] });
+
+    // ── 3. Ngày khách chọn ───────────────────────────────────────────────────
+    const targetDateStr = new Date(date).toISOString().slice(0, 10);
 
     const results = [];
+    const seenRouteIds = new Set();
 
-    // 2️⃣ Với mỗi start, kiểm tra có end trong cùng route không
-    for (const start of startStops) {
-      const endStop = await RouteStop.findOne({
-        route_id: start.route_id,
-        stop_id: nodeId_end,
-        stop_order: { $gt: start.stop_order }, // đảm bảo đúng chiều
+    for (const { startStop, endStop } of validPairs) {
+      const routeIdStr = String(startStop.route_id);
+      if (seenRouteIds.has(routeIdStr)) continue;
+
+      // ── 4. Lấy TẤT CẢ stops của route, sort theo thứ tự ─────────────────
+      //    FIX: Tính CUMULATIVE hours tới startStop thay vì chỉ dùng
+      //         estimated_time của riêng startStop (vốn là incremental)
+      const allStopsOfRoute = await RouteStop.find({ route_id: startStop.route_id })
+        .sort({ stop_order: 1 })
+        .lean();
+
+      // ── 5. Tính tổng giờ tích luỹ từ điểm xuất phát đến startStop ────────
+      //    FIX: Đọc cả field "estimated_time" lẫn " estimated_time" (có space)
+      //         vì MongoDB có thể lưu tên field bị lỗi dấu cách
+      let cumulativeHoursToPickup = 0;
+      for (const s of allStopsOfRoute) {
+        const h = Number(s.estimated_time ?? s[" estimated_time"]) || 0;
+        cumulativeHoursToPickup += h;
+        // Dừng lại SAU KHI cộng chính startStop
+        if (String(s._id) === String(startStop._id)) break;
+      }
+
+      // ── 6. Tìm trip có ngày đến tại startStop khớp với ngày khách chọn ───
+      const trips = await Trip.find({
+        route_id: startStop.route_id,
+        status: { $ne: "CANCELLED" },
+      }).lean();
+
+      const hasMatchingTrip = trips.some((trip) => {
+        const departureMs = new Date(trip.departure_time).getTime();
+        const arrivalAtPickupMs = departureMs + cumulativeHoursToPickup * 3600000;
+        const arrivalAtPickup = new Date(arrivalAtPickupMs);
+        return arrivalAtPickup.toISOString().slice(0, 10) === targetDateStr;
       });
-      if (endStop) {
-        results.push(endStop);
-      }
-    }
-    // check date 
-    const startOfDay = new Date(date);
-    startOfDay.setUTCHours(0, 0, 0, 0);
 
-    const endOfDay = new Date(date);
-    endOfDay.setUTCHours(23, 59, 59, 999);
-    console.log(" ngày bắt đầu và kết thúc là : ", startOfDay, endOfDay)
-    const arr = []
-    const checkList = []
-    for (const route of results) {
-      const node = await Route.findOne({
-        _id: route.route_id,
-        is_active: true
-      })
-        .populate({
-          path: "start_id",
-          select: "province"
-        })
-        .populate({
-          path: "stop_id",
-          select: "province"
-        })
-        ;
-      console.log("3")
+      if (!hasMatchingTrip) continue;
 
-      const checknode = await Trip.findOne({
-        route_id: route.route_id,
-        departure_time: {
-          $gte: startOfDay,
-          $lte: endOfDay,
-        }
-      })
-      console.log("nodecheck là: ", checknode)
-      if (!checknode) {
-        // chuyển qua vòng for tiếp theo
-        continue
-      }
-      checkList.push(checknode)
-      // if (!checknode) {
-      //   console.log("rơi vào không có ")
-      //   return res.json({
-      //     arr
-      //   })
-      // }
-      // const node = await Trip.findOne({
-      //   route_id: route.route_id,
-      // })
-      //   .populate({
-      //     path: "route_id",
-      //     populate: [
-      //       {
-      //         path: "start_id",
-      //         select: "province",
-      //       },
-      //       {
-      //         path: "stop_id",
-      //         select: "province",
-      //       },
-      //     ],
-      //   })
-      //   .populate({
-      //     path: "bus_id",
-      //     populate: {
-      //       path: "bus_type_id"
-      //     },
-      //     select: "-seat_layout"
-      //   })
-      //   .select("-drivers -assistant_id")
-      console.log("4")
-      if (node) {
-        arr.push(node)
-      }
+      // ── 7. Lấy Route với populate đầy đủ ────────────────────────────────
+      const route = await Route.findById(startStop.route_id)
+        .populate({ path: "start_id", select: "name province" })
+        .populate({ path: "stop_id", select: "name province" })
+        .lean();
+
+      if (!route) continue;
+
+      seenRouteIds.add(routeIdStr);
+      results.push(route);
     }
-    if (checkList.length == 0) {
-      return res.json([]);
-    }
-    return res.json(arr);
+
+    console.log("results (routes):", results);
+    return res.json({ success: true, data: results });
   } catch (err) {
-    console.log("Lỗi của chương trình là:", err);
-    return res.status(500).json({
-      message: "Lỗi server",
-    });
+    console.error("[getSearch]", err);
+    return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
 module.exports.viewTripBus = async (req, res) => {

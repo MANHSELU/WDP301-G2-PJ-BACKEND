@@ -42,7 +42,6 @@ const RouteSegmentPriceSchema = new mongoose.Schema(
     }
 );
 
-
 module.exports = mongoose.model(
     "RouteSegmentPrice",
     RouteSegmentPriceSchema
