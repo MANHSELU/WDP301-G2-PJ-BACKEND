@@ -77,6 +77,16 @@ const ParcelSchema = new mongoose.Schema(
             required: true,
             min: 0,
         },
+        payment_method: {
+            type: String,
+            enum: ["ONLINE", "CASH_ON_BOARD"],
+            default: "CASH_ON_BOARD",
+        },
+        payment_status: {
+            type: String,
+            enum: ["PENDING", "PAID", "REFUNDED", "FAILED"],
+            default: "PENDING",
+        },
         approval_status: {
             type: String,
             enum: ["PENDING", "APPROVED", "REJECTED"],
