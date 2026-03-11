@@ -13,6 +13,7 @@ const RouteSegmentPrices = require("./../../model/RouteSegmentPrice");
 const mongoose = require("mongoose");
 const BookingOrder = require("./../../model/BookingOrder")
 const BookingPayment = require("./../../model/BookingPayment")
+const Stops = require("./../../model/Stops")
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -692,9 +693,21 @@ module.exports.searchRoutes = async (req, res) => {
 
 module.exports.getSearch = async (req, res) => {
   try {
-    const { nodeId_start, nodeId_end, date } = req.body;
+    var { nodeId_start, nodeId_end, date, name_start, name_end } = req.body;
 
-    if (!nodeId_start || !nodeId_end || !date) {
+    if (!nodeId_start) {
+      const searchStopStarts = await Stops.findOne({ province: { $regex: name_start, $options: "i" } }).select("-name");
+      console.log("search stop là : ", searchStopStarts)
+      nodeId_start = searchStopStarts.id
+    }
+    console.log("name end là: ", name_end)
+    if (!nodeId_end) {
+      const searchStopEnds = await Stops.findOne({ province: { $regex: name_end, $options: "i" } }).select("-name");
+      console.log("search stop là : ", searchStopEnds)
+      nodeId_end = searchStopEnds.id
+    }
+    console.log("2 id của tôi là : ", nodeId_start, "và", nodeId_end)
+    if (!date) {
       return res.status(400).json({ message: "Thiếu nodeId_start, nodeId_end hoặc date" });
     }
 
@@ -1095,6 +1108,207 @@ module.exports.getPrice = async (req, res) => {
   }
 }
 
+// module.exports.createBooking = async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     const {
+//       user_id,
+//       trip_id,
+//       start_id,
+//       end_id,
+//       seat_labels,      // string[] — ["A1", "A2"]
+//       ticket_price,
+//       payment_method = "CASH_ON_BOARD",
+//       passenger_name,
+//       passenger_phone,
+//       passenger_email,
+//     } = req.body;
+
+//     /* ════════════════════════════════════
+//        1. Validate input
+//     ════════════════════════════════════ */
+//     if (!user_id || !trip_id || !start_id || !end_id) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({
+//         message: "Thiếu thông tin bắt buộc (user_id, trip_id, start_id, end_id)",
+//       });
+//     }
+//     if (!Array.isArray(seat_labels) || seat_labels.length === 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Vui lòng chọn ít nhất 1 ghế" });
+//     }
+//     if (!passenger_name?.trim() || !passenger_phone?.trim()) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Thiếu họ tên hoặc số điện thoại hành khách" });
+//     }
+//     if (!ticket_price || Number(ticket_price) <= 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Giá vé không hợp lệ" });
+//     }
+//     if (!["ONLINE", "CASH_ON_BOARD"].includes(payment_method)) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Phương thức thanh toán không hợp lệ" });
+//     }
+
+//     /* ════════════════════════════════════
+//        2. Kiểm tra chuyến xe
+//     ════════════════════════════════════ */
+//     const trip = await Trip.findById(trip_id).session(session);
+//     if (!trip) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(404).json({ message: "Không tìm thấy chuyến xe" });
+//     }
+//     if (trip.status !== "SCHEDULED") {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Chuyến xe không còn nhận đặt vé" });
+//     }
+
+//     /* ════════════════════════════════════
+//        3. Kiểm tra ghế đã được đặt chưa
+//        → query BookingOrder theo trip_id + seat_id
+//        (BookingOrder không có seat_id trực tiếp nên
+//         ta check qua các order đã tồn tại của cùng trip)
+//     ════════════════════════════════════ */
+
+//     // Lấy tất cả order của trip này còn active (không bị CANCELLED)
+//     const existingOrders = await BookingOrder.find({
+//       trip_id,
+//       order_status: { $ne: "CANCELLED" },
+//     })
+//       .select("seat_labels")
+//       .session(session);
+
+//     // Gom tất cả ghế đã đặt thành 1 mảng phẳng
+//     const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
+
+//     // Tìm ghế bị trùng
+//     const conflictSeats = seat_labels.filter((s) => bookedSeats.includes(s));
+//     if (conflictSeats.length > 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(409).json({
+//         message: `Ghế ${conflictSeats.join(", ")} đã được đặt. Vui lòng chọn ghế khác.`,
+//       });
+//     }
+
+//     /* ════════════════════════════════════
+//        4. Tính tổng tiền
+//     ════════════════════════════════════ */
+//     const price = Number(ticket_price);
+//     const total_price = seat_labels.length * price;
+
+//     /* ════════════════════════════════════
+//        5. Tạo BookingOrder
+//     ════════════════════════════════════ */
+//     const [order] = await BookingOrder.create(
+//       [
+//         {
+//           user_id,
+//           trip_id,
+//           start_id,
+//           end_id,
+//           seat_labels,           // lưu danh sách ghế vào order
+//           order_status: "CREATED",
+//           total_price,
+//           passenger_name: passenger_name.trim(),
+//           passenger_phone: passenger_phone.trim(),
+//           passenger_email: passenger_email?.trim() || null,
+//         },
+//       ],
+//       { session }
+//     );
+
+//     /* ════════════════════════════════════
+//        6. Tạo BookingPayment
+//     ════════════════════════════════════ */
+//     const [payment] = await BookingPayment.create(
+//       [
+//         {
+//           order_id: order._id,
+//           payment_method,
+//           amount: total_price,
+//           payment_status: "PENDING",
+//         },
+//       ],
+//       { session }
+//     );
+
+//     /* ════════════════════════════════════
+//        7. Commit
+//     ════════════════════════════════════ */
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     return res.status(201).json({
+//       message: "Đặt vé thành công",
+//       data: {
+//         order: {
+//           _id: order._id,
+//           order_status: order.order_status,
+//           total_price: order.total_price,
+//           seat_labels: order.seat_labels,
+//           created_at: order.created_at,
+//         },
+//         payment: {
+//           _id: payment._id,
+//           payment_method: payment.payment_method,
+//           amount: payment.amount,
+//           payment_status: payment.payment_status,
+//         },
+//         summary: {
+//           total_seats: seat_labels.length,
+//           total_price,
+//           passenger_name: passenger_name.trim(),
+//           passenger_phone: passenger_phone.trim(),
+//         },
+//       },
+//     });
+//   } catch (err) {
+//     try {
+//       await session.abortTransaction();
+//     } catch (_) { }
+//     session.endSession();
+//     console.error("[createBooking] Error:", err);
+//     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+//   }
+// }
+// module.exports.getBookedSeats = async (req, res) => {
+//   try {
+//     const { trip_id } = req.body;
+
+//     if (!trip_id) {
+//       return res.status(400).json({ message: "Thiếu trip_id" });
+//     }
+
+//     // Lấy tất cả order của trip này chưa bị huỷ
+//     const orders = await BookingOrder.find({
+//       trip_id,
+//       order_status: { $ne: "CANCELLED" },
+//     }).select("seat_labels");
+
+//     // Gom tất cả seat_labels thành 1 mảng phẳng, bỏ duplicate
+//     const bookedSeats = [
+//       ...new Set(orders.flatMap((o) => o.seat_labels || [])),
+//     ];
+
+//     return res.status(200).json({
+//       message: "Lấy danh sách ghế đã đặt thành công",
+//       data: bookedSeats, // ["A1", "A3", "A7", ...]
+//     });
+//   } catch (err) {
+//     console.error("[getBookedSeats] Error:", err);
+//     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+//   }
+// }
 module.exports.createBooking = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -1110,7 +1324,8 @@ module.exports.createBooking = async (req, res) => {
       payment_method = "CASH_ON_BOARD",
       passenger_name,
       passenger_phone,
-      passenger_email,
+      start_info,   // { city, specific_location }
+      end_info,     // { city, specific_location }
     } = req.body;
 
     /* ════════════════════════════════════
@@ -1203,12 +1418,19 @@ module.exports.createBooking = async (req, res) => {
           trip_id,
           start_id,
           end_id,
-          seat_labels,           // lưu danh sách ghế vào order
+          seat_labels,
           order_status: "CREATED",
+          start_info: {
+            city: start_info?.city ?? "",
+            specific_location: start_info?.specific_location ?? "",
+          },
+          end_info: {
+            city: end_info?.city ?? "",
+            specific_location: end_info?.specific_location ?? "",
+          },
           total_price,
           passenger_name: passenger_name.trim(),
           passenger_phone: passenger_phone.trim(),
-          passenger_email: passenger_email?.trim() || null,
         },
       ],
       { session }
@@ -1267,39 +1489,86 @@ module.exports.createBooking = async (req, res) => {
     console.error("[createBooking] Error:", err);
     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
   }
-}
+};
+
 module.exports.getBookedSeats = async (req, res) => {
   try {
-    const { trip_id } = req.body;
+    // ── start_id, end_id là RouteStop._id của khách đang xem ─────────────────
+    const { trip_id, start_id, end_id } = req.body;
 
     if (!trip_id) {
       return res.status(400).json({ message: "Thiếu trip_id" });
     }
 
-    // Lấy tất cả order của trip này chưa bị huỷ
+    // Nếu chưa chọn điểm đón/trả → trả về mảng rỗng (chưa hiển thị ghế bận)
+    if (!start_id || !end_id) {
+      return res.status(200).json({
+        message: "Chưa chọn điểm đón/trả",
+        data: [],
+      });
+    }
+
+    // ── Lấy stop_order của điểm đón/trả mà khách chọn ───────────────────────
+    const [customerStart, customerEnd] = await Promise.all([
+      RouteStop.findById(start_id).select("stop_order").lean(),
+      RouteStop.findById(end_id).select("stop_order").lean(),
+    ]);
+
+    if (!customerStart || !customerEnd) {
+      return res.status(400).json({ message: "start_id hoặc end_id không hợp lệ" });
+    }
+
+    const customerStartOrder = customerStart.stop_order;
+    const customerEndOrder = customerEnd.stop_order;
+
+    // ── Lấy tất cả booking chưa huỷ của trip ────────────────────────────────
     const orders = await BookingOrder.find({
       trip_id,
       order_status: { $ne: "CANCELLED" },
-    }).select("seat_labels");
+    }).select("seat_labels start_id end_id").lean();
 
-    // Gom tất cả seat_labels thành 1 mảng phẳng, bỏ duplicate
+    // ── Lọc booking nào OVERLAP với đoạn của khách ───────────────────────────
+    // Hai đoạn [A,B] và [C,D] OVERLAP khi: A < D và C < B
+    // Tức là: booking.start < customer.end  VÀ  customer.start < booking.end
+    const overlappingOrders = [];
+
+    for (const order of orders) {
+      // Lấy stop_order của booking này
+      const [bStart, bEnd] = await Promise.all([
+        RouteStop.findById(order.start_id).select("stop_order").lean(),
+        RouteStop.findById(order.end_id).select("stop_order").lean(),
+      ]);
+
+      if (!bStart || !bEnd) continue;
+
+      const bStartOrder = bStart.stop_order;
+      const bEndOrder = bEnd.stop_order;
+
+      // Kiểm tra overlap
+      const isOverlap = bStartOrder < customerEndOrder && customerStartOrder < bEndOrder;
+
+      if (isOverlap) {
+        overlappingOrders.push(order);
+      }
+    }
+
+    // ── Gom seat_labels từ các booking overlap ───────────────────────────────
     const bookedSeats = [
-      ...new Set(orders.flatMap((o) => o.seat_labels || [])),
+      ...new Set(overlappingOrders.flatMap((o) => o.seat_labels || [])),
     ];
 
     return res.status(200).json({
       message: "Lấy danh sách ghế đã đặt thành công",
-      data: bookedSeats, // ["A1", "A3", "A7", ...]
+      data: bookedSeats, // ["A1", "A3", ...] — chỉ ghế bận TRONG đoạn khách đi
     });
   } catch (err) {
     console.error("[getBookedSeats] Error:", err);
     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
   }
-}
+};
 module.exports.getOrderHistory = async (req, res) => {
   try {
-    // user_id lấy từ middleware auth (req.user._id)
-    const user_id = res.locals.user.id
+    const user_id = res.locals.user.id;
     if (!user_id) {
       return res.status(401).json({ message: "Không xác định được tài khoản" });
     }
@@ -1308,11 +1577,9 @@ module.exports.getOrderHistory = async (req, res) => {
     const limit = Math.max(1, parseInt(req.body.limit) || 10);
     const skip = (page - 1) * limit;
 
-    // Tổng số đơn
     const total = await BookingOrder.countDocuments({ user_id });
     const totalPages = Math.ceil(total / limit);
 
-    // Lấy danh sách đơn, populate trip + route
     const orders = await BookingOrder.find({ user_id })
       .sort({ created_at: -1 })
       .skip(skip)
@@ -1336,11 +1603,8 @@ module.exports.getOrderHistory = async (req, res) => {
           },
         ],
       })
-      .populate("start_id", "stop_id stop_order")
-      .populate("end_id", "stop_id stop_order")
       .lean();
 
-    // Lấy payment tương ứng cho từng order
     const orderIds = orders.map((o) => o._id);
     const payments = await BookingPayment.find({
       order_id: { $in: orderIds },
@@ -1353,7 +1617,6 @@ module.exports.getOrderHistory = async (req, res) => {
       paymentMap[p.order_id.toString()] = p;
     });
 
-    // Format response
     const data = orders.map((order) => {
       const trip = order.trip_id;
       const payment = paymentMap[order._id.toString()] || null;
@@ -1365,7 +1628,22 @@ module.exports.getOrderHistory = async (req, res) => {
         seat_labels: order.seat_labels || [],
         passenger_name: order.passenger_name,
         passenger_phone: order.passenger_phone,
+        passenger_email: order.passenger_email || null,
         created_at: order.created_at,
+
+        // ✅ Đọc thẳng từ document, không cần populate
+        start_info: order.start_info
+          ? {
+            city: order.start_info.city || null,
+            specific_location: order.start_info.specific_location?.trim() || null,
+          }
+          : null,
+        end_info: order.end_info
+          ? {
+            city: order.end_info.city || null,
+            specific_location: order.end_info.specific_location?.trim() || null,
+          }
+          : null,
 
         trip: trip
           ? {
