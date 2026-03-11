@@ -11,7 +11,7 @@ const RouteSegmentPriceSchema = new mongoose.Schema(
 
         start_id: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: "RouteStop",
+            ref: "RouteStop",   
             required: true,
         },
         end_id: {
@@ -23,12 +23,12 @@ const RouteSegmentPriceSchema = new mongoose.Schema(
         bus_type_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "BusType",
-            required: true,
+            required: false,
         },
 
         base_price: {
             type: Number,
-            required: true,
+            required: false,
             min: 0,
         },
 
