@@ -1467,9 +1467,6 @@ module.exports.createParcel = async (req, res) => {
       ? "Tạo đơn gửi hàng thành công"
       : "Đơn bị từ chối vì quá khối lượng của chuyến";
 
-    await session.commitTransaction();
-    session.endSession();
-
     return res.status(201).json({
       message: responseMessage,
       data: {
