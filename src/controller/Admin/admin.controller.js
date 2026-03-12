@@ -6,6 +6,8 @@ const Route = require("../../model/Routers");
 const Stop = require("../../model/Stops");
 const RouteStop = require("../../model/route_stops");
 const StopLocation = require("../../model/StopLocation");
+const RouteSegmentPrice = require("../../model/RouteSegmentPrice");
+
 const { getStartToEndDuration } = require("../../util/ApiDistanceStartToEnd");
 const {
   getRouteDistanceAndDuration,
@@ -1089,9 +1091,8 @@ module.exports.updateLocationStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Location ${
-        is_active ? "activated" : "deactivated"
-      } successfully`,
+      message: `Location ${is_active ? "activated" : "deactivated"
+        } successfully`,
       data: {
         _id: updatedLocation._id,
         name: updatedLocation.location_name,
@@ -1641,20 +1642,40 @@ module.exports.createRoutes = async (req, res) => {
       endLng,
       endLat
     );
-    const newRoute = await Route.create({
-      start_id,
-      stop_id,
-      distance_km: routeInformation.distance_km,
-      estimated_duration: routeInformation.duration_hour,
-    });
-    await newRoute.save(session);
-    const newRoute_Stop = stops.map((s) => ({
+
+    const fullStops = [
+      {
+        stop_id: start_id,
+        stop_order: 1,
+        estimated_time: 0,
+      },
+      ...stops,
+      {
+        stop_id: stop_id,
+        stop_order: stops.length + 2,
+        estimated_time: routeInformation.duration_hour,
+      }
+    ]
+    const routeId = newRoute[0]._id;
+    const newRoute_Stop = fullStops.map((s) => ({
       route_id: routeId,
       stop_id: s.stop_id,
       stop_order: s.stop_order,
-      estimated_time: s.duration_from_start,
+      estimated_time: s.duration_from_start || s.estimated_time,
     }));
-    await Route_Stop.insertMany(newRoute_Stop, { session });
+    const routeStops = await Route_Stop.insertMany(newRoute_Stop, { session });
+    routeStops.sort((a, b) => a.stop_order - b.stop_order);
+    const routeSegments = [];
+    for (let i = 0; i < routeStops.length; i++) {
+      for (let j = i + 1; j < routeStops.length; j++) {
+        routeSegments.push({
+          route_id: routeId,
+          start_id: routeStops[i]._id,
+          end_id: routeStops[j]._id,
+        });
+      }
+    }
+    await RouteSegmentPrice.insertMany(routeSegments, { session });
     await session.commitTransaction();
     return res.status(201).json({ message: "Tạo tuyến thành công" });
   } catch (error) {
