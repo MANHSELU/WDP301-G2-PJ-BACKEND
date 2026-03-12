@@ -37,7 +37,7 @@ router.post("/createStopLocation", adminController.createStopLocation);
 router.get("/getRoutes", adminController.getAllRoutes);
 router.get("/getBuses", adminController.getAllBuses);
 router.get("/getAvailableDrivers", adminController.getAvailableDrivers);
-router.get("/searchAssistant", adminController.searchAssistantDriver);
+router.get("/getAvailableAssistant", adminController.getAvailableAssistantDriver);
 router.post("/trips", adminController.createTrips);
 router.get("/getDurationHandicraft", adminController.getDurationOfHandicraft);
 
