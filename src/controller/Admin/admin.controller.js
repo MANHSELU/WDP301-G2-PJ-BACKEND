@@ -1636,13 +1636,24 @@ module.exports.createRoutes = async (req, res) => {
     const endStop = await Stop.findById(stop_id);
     const [startLng, startLat] = startStop.location.coordinates;
     const [endLng, endLat] = endStop.location.coordinates;
-    const routeInformation = await getRouteDistance(
-      startLng,
-      startLat,
-      endLng,
-      endLat
+    const routeInformation =
+      await getStartToEndDuration(
+        startLng,
+        startLat,
+        endLng,
+        endLat
+      );
+    const newRoute = await Route.create(
+      [
+        {
+          start_id,
+          stop_id,
+          distance_km: routeInformation.distance_km,
+          estimated_duration: routeInformation.duration_hour,
+        },
+      ],
+      { session }
     );
-
     const fullStops = [
       {
         stop_id: start_id,
