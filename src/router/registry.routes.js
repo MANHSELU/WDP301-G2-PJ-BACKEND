@@ -53,11 +53,6 @@ module.exports = [
   {
     prefix: "/api/admin/check",
     middlewares: [checkClient.checkaccount],
-    router: adminCheck,
-  },
-  {
-    prefix: "/api/admin/check",
-    middlewares: [checkClient.checkaccount],
     router: adminCheck
   },
   {
