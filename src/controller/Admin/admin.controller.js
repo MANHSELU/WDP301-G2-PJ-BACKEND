@@ -1761,152 +1761,483 @@ module.exports.getAllRoutes = async (req, res) => {
 // Hàm lấy tất cả xe đã check conflict lịch
 module.exports.getAllBuses = async (req, res) => {
   try {
-    const { departure_time, arrival_time } = req.query;
-    if (!departure_time || !arrival_time) {
-      const allBuses = await Bus.find().populate("bus_type_id", "name");
-      return res.status(200).json(allBuses);
-    }
-    const departureDate = new Date(departure_time);
-    const arrivalDate = new Date(arrival_time);
-    const conflictingTrips = await Trip.find({
-      status: { $in: ["SCHEDULED", "RUNNING"] },
-      $or: [
-        {
-          departure_time: { $lte: departureDate },
-          arrival_time: { $gte: departureDate },
-        },
-        {
-          departure_time: { $lte: arrivalDate },
-          arrival_time: { $gte: arrivalDate },
-        },
-        {
-          departure_time: { $gte: departureDate },
-          arrival_time: { $lte: arrivalDate },
-        },
-      ],
-    }).select("bus_id");
-    const busyBusIds = conflictingTrips.map((trip) => trip.bus_id.toString());
-    const availableBuses = await Bus.find({
-      _id: { $nin: busyBusIds },
-    })
-      .select("bus_type_id license_plate")
-      .populate("bus_type_id", "name");
-    return res.status(200).json(availableBuses);
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-};
-// Hàm lấy tài xế đã check conflict lịch
-module.exports.getAvailableDrivers = async (req, res) => {
-  try {
-    const { shift_start, shift_end } = req.query;
-    if (!shift_start || !shift_end) {
+    const { shift_start, shift_end, start_stop_id } = req.query;
+    if (!shift_start || !shift_end || !start_stop_id) {
       return res.status(400).json({
-        message: "Phải truyền shift_start và shift_end",
+        message: "Thiếu shift_start, shift_end hoặc start_stop_id",
       });
     }
     const start = new Date(shift_start);
     const end = new Date(shift_end);
-    if (start >= end) {
+
+    const BOARDING_BUFFER = 15;
+
+    const CLEAN_TIME = 30;
+    const busyTrips = await Trip.find({
+      status: { $in: ["SCHEDULED", "RUNNING"] },
+
+      departure_time: { $lt: end },
+      arrival_time: { $gt: start },
+    }).select("bus_id");
+
+    const busyBusIds = new Set(
+      busyTrips.map((trip) => trip.bus_id.toString())
+    );
+    const lastTrips = await Trip.aggregate([
+      {
+        $match: {
+          status: { $in: ["SCHEDULED", "RUNNING", "FINISHED"] },
+          arrival_time: { $lte: start },
+        },
+      },
+      { $sort: { arrival_time: -1 } },
+      {
+        $group: {
+          _id: "$bus_id",
+          end: { $first: "$arrival_time" },
+          route_id: { $first: "$route_id" },
+        },
+      },
+      {
+        $lookup: {
+          from: "routes",
+          localField: "route_id",
+          foreignField: "_id",
+          as: "route",
+        },
+      },
+      { $unwind: "$route" },
+      {
+        $project: {
+          end: 1,
+          end_stop_id: "$route.stop_id",
+        },
+      },
+    ]);
+    console.log("lastTrips raw:", JSON.stringify(lastTrips, null, 2));
+    const lastTripMap = {};
+
+    lastTrips.forEach((trip) => {
+      lastTripMap[trip._id.toString()] = {
+        end: new Date(trip.end),
+        location: trip.end_stop_id,
+      };
+    });
+
+    const futureTrips = await Trip.aggregate([
+      {
+        $match: {
+          status: { $in: ["SCHEDULED", "RUNNING"] },
+          departure_time: { $gte: start },
+        },
+      },
+      { $sort: { departure_time: 1 } },
+      {
+        $group: {
+          _id: "$bus_id",
+          start: { $first: "$departure_time" },
+          route_id: { $first: "$route_id" },
+        },
+      },
+      {
+        $lookup: {
+          from: "routes",
+          localField: "route_id",
+          foreignField: "_id",
+          as: "route",
+        },
+      },
+      { $unwind: "$route" },
+      {
+        $project: {
+          start: 1,
+          start_stop_id: "$route.start_id",
+          end_stop_id: "$route.stop_id",
+        },
+      },
+    ]);
+    const futureTripMap = {};
+
+    futureTrips.forEach((trip) => {
+      futureTripMap[trip._id.toString()] = trip;
+    });
+    const buses = await Bus.find()
+      .select("_id license_plate bus_type_id current_stop_id")
+      .populate("bus_type_id", "name")
+      .lean();
+    const result = [];
+
+    for (const bus of buses) {
+      const busId = bus._id.toString();
+
+      if (busyBusIds.has(busId)) continue;
+
+      const lastTrip = lastTripMap[busId];
+      const futureTrip = futureTripMap[busId];
+
+      let busLocation = bus.current_stop_id;
+      if (lastTrip && lastTrip.location) {
+        busLocation = lastTrip.location;
+      }
+      if (!busLocation) continue;
+      if (busLocation.toString() !== start_stop_id.toString()) {
+        continue;
+      }
+      if (futureTrip) {
+        if (
+          futureTrip.start_stop_id.toString() !==
+          start_stop_id.toString()
+        ) {
+          continue;
+        }
+      }
+      let breakMinutes = Infinity;
+      if (lastTrip) {
+        breakMinutes = (start - lastTrip.end) / (1000 * 60);
+      }
+      const requiredBreak = CLEAN_TIME + BOARDING_BUFFER;
+      let status = "GREEN";
+      let warning = null;
+      if (breakMinutes < requiredBreak) {
+        status = "YELLOW";
+        warning = "Xe không đủ thời gian nghỉ giữa 2 chuyến";
+      }
+      result.push({
+        ...bus,
+        bus_location: busLocation,
+        breakMinutes: Math.round(breakMinutes),
+        requiredBreak,
+        status,
+        warning,
+      });
+    }
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+// Hàm lấy tài xế đã check conflict lịch
+// Hàm lấy danh sách tài xế có thể assign cho chuyến mới
+module.exports.getAvailableDrivers = async (req, res) => {
+  try {
+    const { shift_start, shift_end, start_stop_id, travel_duration } = req.query;
+    if (!shift_start || !shift_end || !start_stop_id || !travel_duration) {
       return res.status(400).json({
-        message: "shift_end phải lớn hơn shift_start",
+        message: "Thiếu shift_start, shift_end, start_stop_id hoặc travel_duration",
       });
     }
+    const start = new Date(shift_start);
+    const end = new Date(shift_end);
+
+    const BOARDING_BUFFER = 15;
+    const MIN_REST = 120;
     const driverRole = await Role.findOne({ name: "DRIVER" }).lean();
-    if (!driverRole) {
-      return res.status(404).json({
-        message: "Không tìm thấy role DRIVER",
-      });
-    }
+    const drivers = await User.find({ role: driverRole._id })
+      .select("_id name phone current_stop_id")
+      .lean();
+    const driverIds = drivers.map((d) => d._id);
     const busyTrips = await Trip.find({
       status: { $in: ["SCHEDULED", "RUNNING"] },
       drivers: {
         $elemMatch: {
-          $or: [
-            {
-              actual_shift_start: { $lt: end },
-              actual_shift_end: { $gt: start },
-            },
-            {
-              actual_shift_start: null,
-              shift_start: { $lt: end },
-              shift_end: { $gt: start },
-            },
-          ],
+          shift_start: { $lt: end },
+          shift_end: { $gt: start },
         },
       },
     }).select("drivers");
     const busyDriverIds = new Set();
-    conflictingTrips.forEach((trip) => {
-      trip.drivers.forEach((driver) => {
-        const driverShiftStart = new Date(driver.shift_start);
-        const driverShiftEnd = new Date(driver.shift_end);
-        const hasConflict =
-          (shiftStartDate >= driverShiftStart &&
-            shiftStartDate < driverShiftEnd) ||
-          (shiftEndDate > driverShiftStart && shiftEndDate <= driverShiftEnd) ||
-          (shiftStartDate <= driverShiftStart &&
-            shiftEndDate >= driverShiftEnd);
 
-        if (hasConflict) {
-          busyDriverIds.add(driver.driver_id.toString());
+    busyTrips.forEach((trip) => {
+      trip.drivers.forEach((d) => {
+        if (d.shift_start < end && d.shift_end > start) {
+          busyDriverIds.add(d.driver_id.toString());
         }
       });
     });
-    const availableDrivers = drivers.filter(
-      (driver) => !busyDriverIds.has(driver._id.toString())
-    );
-    return res.status(200).json(availableDrivers);
+    const lastTrips = await Trip.aggregate([
+      {
+        $match: {
+          status: { $in: ["SCHEDULED", "RUNNING", "FINISHED"] },
+        },
+      },
+      { $unwind: "$drivers" },
+      {
+        $match: {
+          "drivers.driver_id": { $in: driverIds },
+          arrival_time: { $lte: start },
+        },
+      },
+      { $sort: { arrival_time: -1 } },
+      {
+        $group: {
+          _id: "$drivers.driver_id",
+          end: { $first: "$arrival_time" },
+          route_id: { $first: "$route_id" },
+        },
+      },
+      {
+        $lookup: {
+          from: "routes",
+          localField: "route_id",
+          foreignField: "_id",
+          as: "route",
+        },
+      },
+      { $unwind: "$route" },
+      {
+        $project: {
+          end: 1,
+          end_stop_id: "$route.stop_id",
+        },
+      },
+    ]);
+    const lastTripMap = {};
+    lastTrips.forEach((trip) => {
+      lastTripMap[trip._id.toString()] = {
+        end: new Date(trip.end),
+        location: trip.end_stop_id,
+      };
+    });
+    const futureTrips = await Trip.aggregate([
+      {
+        $match: {
+          status: { $in: ["SCHEDULED", "RUNNING"] },
+        },
+      },
+      { $unwind: "$drivers" },
+      {
+        $match: {
+          "drivers.driver_id": { $in: driverIds },
+          departure_time: { $gte: start },
+        },
+      },
+      { $sort: { departure_time: 1 } },
+      {
+        $group: {
+          _id: "$drivers.driver_id",
+          start: { $first: "$departure_time" },
+          route_id: { $first: "$route_id" },
+        },
+      },
+      {
+        $lookup: {
+          from: "routes",
+          localField: "route_id",
+          foreignField: "_id",
+          as: "route",
+        },
+      },
+      { $unwind: "$route" },
+      {
+        $project: {
+          start: 1,
+          start_stop_id: "$route.start_id",
+        },
+      },
+    ]);
+    const futureTripMap = {};
+    futureTrips.forEach((trip) => {
+      futureTripMap[trip._id.toString()] = trip;
+    });
+    const result = [];
+    for (const driver of drivers) {
+      const driverId = driver._id.toString();
+      if (busyDriverIds.has(driverId)) continue;
+
+      const lastTrip = lastTripMap[driverId];
+      const futureTrip = futureTripMap[driverId];
+      if (futureTrip) {
+        if (futureTrip.start_stop_id.toString() !== start_stop_id.toString()) {
+          continue;
+        }
+      }
+      let driverLocation = driver.current_stop_id;
+      let breakMinutes = Infinity;
+      if (lastTrip && lastTrip.location) {
+        driverLocation = lastTrip.location;
+        breakMinutes = (start - lastTrip.end) / (1000 * 60);
+      }
+      if (!driverLocation) continue;
+      if (driverLocation.toString() !== start_stop_id.toString()) {
+        continue;
+      }
+      const requiredBreak = MIN_REST + BOARDING_BUFFER;
+      let status = "GREEN";
+      let warning = null;
+      if (breakMinutes < requiredBreak) {
+        status = "YELLOW";
+        warning = "Không đủ thời gian nghỉ giữa các chuyến";
+      }
+      result.push({
+        ...driver,
+        driver_location: driverLocation,
+        breakMinutes: Math.round(breakMinutes),
+        requiredBreak,
+        status,
+        warning,
+      });
+    }
+
+    return res.status(200).json(result);
+
   } catch (error) {
+    console.error(error);
     return res.status(500).json({ message: error.message });
   }
 };
-// hàm search lơ xe
-module.exports.searchAssistantDriver = async (req, res) => {
-  try {
-    const { keyword, departure_time, arrival_time } = req.query;
 
-    if (!keyword || keyword.trim().length < 2) {
-      return res.status(400).json({
-        message: "Keyword phải có ít nhất 2 ký tự",
-      });
-    }
+
+// hàm lấy lơ xe lơ xe 
+module.exports.getAvailableAssistantDriver = async (req, res) => {
+  try {
+    const { shift_start, shift_end, start_stop_id } = req.query;
+
     const assistantRole = await Role.findOne({ name: "ASSISTANT" }).lean();
     if (!assistantRole) {
       return res.status(404).json({ message: "Không tìm thấy role ASSISTANT" });
     }
-    const assistants = await User.find({
-      role: assistantRole._id,
-      name: { $regex: keyword.trim(), $options: "i" },
-    })
-      .select("name email phone")
+    const assistants = await User.find({ role: assistantRole._id })
+      .select("_id name email phone current_stop_id")
       .lean();
-    if (!departure_time || !arrival_time) {
+    if (!shift_start || !shift_end || !start_stop_id) {
       return res.status(200).json(assistants);
     }
-    const departureDate = new Date(departure_time);
-    const arrivalDate = new Date(arrival_time);
-    const conflictingTrips = await Trip.find({
+    const start = new Date(shift_start);
+    const end = new Date(shift_end);
+    const BOARDING_BUFFER = 15;
+    const MIN_REST = 120;
+    const assistantIds = assistants.map((a) => a._id);
+    const busyTrips = await Trip.find({
       status: { $in: ["SCHEDULED", "RUNNING"] },
-      assistant_id: { $exists: true, $ne: null },
-    }).select("assistant_id departure_time arrival_time");
-    const busyAssistantIds = new Set();
-    conflictingTrips.forEach((trip) => {
-      const tripDeparture = new Date(trip.departure_time);
-      const tripArrival = new Date(trip.arrival_time);
-      const hasConflict =
-        (departureDate >= tripDeparture && departureDate < tripArrival) ||
-        (arrivalDate > tripDeparture && arrivalDate <= tripArrival) ||
-        (departureDate <= tripDeparture && arrivalDate >= tripArrival);
-      if (hasConflict && trip.assistant_id) {
-        busyAssistantIds.add(trip.assistant_id.toString());
-      }
-    });
-    const availableAssistants = assistants.filter(
-      (assistant) => !busyAssistantIds.has(assistant._id.toString())
+
+      drivers: {
+        $elemMatch: {
+          shift_start: { $lt: end },
+          shift_end: { $gt: start },
+        },
+      },
+      assistant_id: { $in: assistantIds },
+    }).select("assistant_id");
+
+    const busyAssistantIds = new Set(
+      busyTrips.map((trip) => trip.assistant_id.toString())
     );
-    return res.status(200).json(availableAssistants);
+    const lastTrips = await Trip.aggregate([
+      {
+        $match: {
+          status: { $in: ["SCHEDULED", "RUNNING", "FINISHED"] },
+          assistant_id: { $in: assistantIds },
+          arrival_time: { $lte: start },
+        },
+      },
+      { $sort: { arrival_time: -1 } },
+      {
+        $group: {
+          _id: "$assistant_id",
+          end: { $first: "$arrival_time" },
+          route_id: { $first: "$route_id" },
+        },
+      },
+      {
+        $lookup: {
+          from: "routes",
+          localField: "route_id",
+          foreignField: "_id",
+          as: "route",
+        },
+      },
+      { $unwind: "$route" },
+      {
+        $project: {
+          end: 1,
+          end_stop_id: "$route.stop_id",
+        },
+      },
+    ]);
+    const lastTripMap = {};
+    lastTrips.forEach((trip) => {
+      lastTripMap[trip._id.toString()] = {
+        end: new Date(trip.end),
+        location: trip.end_stop_id,
+      };
+    });
+    const futureTrips = await Trip.aggregate([
+      {
+        $match: {
+          status: { $in: ["SCHEDULED", "RUNNING"] },
+          assistant_id: { $in: assistantIds },
+          departure_time: { $gte: start },
+        },
+      },
+      { $sort: { departure_time: 1 } },
+      {
+        $group: {
+          _id: "$assistant_id",
+          start: { $first: "$departure_time" },
+          route_id: { $first: "$route_id" },
+        },
+      },
+      {
+        $lookup: {
+          from: "routes",
+          localField: "route_id",
+          foreignField: "_id",
+          as: "route",
+        },
+      },
+      { $unwind: "$route" },
+      {
+        $project: {
+          start: 1,
+          start_stop_id: "$route.start_id",
+        },
+      },
+    ]);
+    const futureTripMap = {};
+    futureTrips.forEach((trip) => {
+      futureTripMap[trip._id.toString()] = trip;
+    });
+    const result = [];
+    for (const assistant of assistants) {
+      const assistantId = assistant._id.toString();
+      if (busyAssistantIds.has(assistantId)) continue;
+      const lastTrip = lastTripMap[assistantId];
+      const futureTrip = futureTripMap[assistantId];
+      if (futureTrip) {
+        if (futureTrip.start_stop_id.toString() !== start_stop_id.toString()) {
+          continue;
+        }
+      }
+      let assistantLocation = assistant.current_stop_id;
+      let breakMinutes = Infinity;
+      if (lastTrip && lastTrip.location) {
+        assistantLocation = lastTrip.location;
+        breakMinutes = (start - lastTrip.end) / (1000 * 60);
+      }
+      if (!assistantLocation) continue;
+      if (assistantLocation.toString() !== start_stop_id.toString()) {
+        continue;
+      }
+      const requiredBreak = MIN_REST + BOARDING_BUFFER;
+      let status = "GREEN";
+      let warning = null;
+      if (breakMinutes < requiredBreak) {
+        status = "YELLOW";
+        warning = "Không đủ thời gian nghỉ giữa các chuyến";
+      }
+      result.push({
+        ...assistant,
+        assistant_location: assistantLocation,
+        breakMinutes: Math.round(breakMinutes),
+        requiredBreak,
+        status,
+        warning,
+      });
+    }
+    return res.status(200).json(result);
   } catch (error) {
+    console.error(error);
     return res.status(500).json({ message: error.message });
   }
 };
@@ -1932,6 +2263,11 @@ module.exports.createTrips = async (req, res) => {
       !scheduled_duration
     ) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
+    };
+    if (new Date(departure_time) <= new Date(Date.now())) {
+      return res.status(400).json({
+        message: "Thời gian khởi hành phải là thời gian trong tương lai",
+      });
     }
     const route = await Route.findById(route_id);
     if (!route) {
@@ -1958,8 +2294,7 @@ module.exports.createTrips = async (req, res) => {
           message: `Ca làm của tài xế ${driver.name} không nằm trong thời gian chuyến.`,
         });
       }
-    }
-
+    };
     const trip = new Trip({
       route_id,
       bus_id,

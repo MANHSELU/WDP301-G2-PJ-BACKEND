@@ -1,97 +1,100 @@
 const mongoose = require("mongoose");
-// chuyến đi  nhưng với nhiều xe và giá khác nhau ( chung 1 tuyến đường )   dn-hcm :  1 thường 
+// chuyến đi  nhưng với nhiều xe và giá khác nhau ( chung 1 tuyến đường )   dn-hcm :  1 thường
 const TripSchema = new mongoose.Schema(
-    {
-        route_id: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Route",
-            required: true,
-        },
+  {
+    route_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Route",
+      required: true,
+    },
 
-        bus_id: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Bus",
-            required: true,
+    bus_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Bus",
+      required: true,
+    },
+    // người lái
+    drivers: [
+      {
+        driver_id: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
         },
-        // người lái
-        drivers: [
-            {
-                driver_id: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: "User",
-                    required: true,
-                },
-                // thời điểm dự kiến bắt đầu ca lái 
-                shift_start: {
-                    type: Date,
-                    required: true,
-                },
-                // thời điểm dự kiến kết thúc ca lái 
-                shift_end: {
-                    type: Date,
-                    required: true,
-                },
-                // thời điểm dự kiến bắt đầu ca lái 
-                actual_shift_start: {
-                    type: Date,
-                    default: null,
-                },
-                // thời điểm dự kiến kết thúc ca lái 
-                actual_shift_end: {
-                    type: Date,
-                    default: null,
-                },
-                status: {
-                    type: String,
-                    enum: ["PENDING", "RUNNING", "DONE"],
-                    default: "PENDING",
-                },
-            }
-        ],
-        assistant_id: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "User",
-            required: false,
+        // thời điểm dự kiến bắt đầu ca lái
+        shift_start: {
+          type: Date,
+          required: true,
         },
-        // thời gian khởi hành dự kiến
-        departure_time: {
-            type: Date,
-            required: true,
+        // thời điểm dự kiến kết thúc ca lái
+        shift_end: {
+          type: Date,
+          required: true,
         },
-        // Thời gian kết thúc dự kiến
-        arrival_time: {
-            type: Date,
-            required: true,
+        // thời điểm dự kiến bắt đầu ca lái
+        actual_shift_start: {
+          type: Date,
+          default: null,
         },
-        //Thời gian bắt đầu thực tế
-        actual_departure_time: {
-            type: Date,
-            required: false
-        },
-        //Thời gian kết thúc thực tế
-        actual_arrival_time: {
-            type: Date,
-            required: false
-        },
-        //Khoảng cách dự kiến
-        scheduled_distance: {
-            type: Number,
-            required: false
-        },
-        //Thời gian dự kiến đơn vị phút
-        scheduled_duration: {
-            type: Number,
-            required: true
+        // thời điểm dự kiến kết thúc ca lái
+        actual_shift_end: {
+          type: Date,
+          default: null,
         },
         status: {
-            type: String,
-            enum: ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"],
-            default: "SCHEDULED",
+          type: String,
+          enum: ["PENDING", "RUNNING", "DONE"],
+          default: "PENDING",
         },
+      },
+    ],
+    assistant_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
     },
-    {
-        timestamps: { createdAt: "created_at", updatedAt: false },
-    }
+    // thời gian khởi hành dự kiến
+    departure_time: {
+      type: Date,
+      required: true,
+    },
+    // Thời gian kết thúc dự kiến
+    arrival_time: {
+      type: Date,
+      required: true,
+    },
+    //Thời gian bắt đầu thực tế
+    actual_departure_time: {
+      type: Date,
+      required: false,
+    },
+    //Thời gian kết thúc thực tế
+    actual_arrival_time: {
+      type: Date,
+      required: false,
+    },
+    //Khoảng cách dự kiến
+    scheduled_distance: {
+      type: Number,
+      required: false,
+    },
+    //Thời gian dự kiến đơn vị phút
+    scheduled_duration: {
+      type: Number,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"],
+      default: "SCHEDULED",
+    },
+  },
+  {
+    timestamps: { createdAt: "created_at", updatedAt: false },
+  },
 );
-
+TripSchema.index({
+  "drivers.driver_id": 1,
+  "drivers.shift_end": 1,
+});
 module.exports = mongoose.model("Trip", TripSchema);
