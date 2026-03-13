@@ -693,22 +693,27 @@ module.exports.searchRoutes = async (req, res) => {
 
 module.exports.getSearch = async (req, res) => {
   try {
-    // ✅ FIX 1: dùng let để có thể reassign khi tìm theo tên
     let { nodeId_start, nodeId_end, date, name_start, name_end } = req.body;
-    console.log("node id và node end id ", nodeId_start, nodeId_end)
+
     if (!nodeId_start) {
       const searchStopStarts = await Stops.findOne({ province: { $regex: name_start, $options: "i" } }).select("-name");
       nodeId_start = searchStopStarts?._id;
     }
     if (!nodeId_end) {
       const searchStopEnds = await Stops.findOne({ province: { $regex: name_end, $options: "i" } }).select("-name");
-      // ✅ FIX 2: gán đúng biến nodeId_end (không phải nodeId_start)
       nodeId_end = searchStopEnds?._id;
     }
 
     if (!nodeId_start || !nodeId_end || !date) {
       return res.status(400).json({ message: "Thiếu nodeId_start, nodeId_end hoặc date" });
     }
+
+    // ── Helper: chuyển timestamp ms → "YYYY-MM-DD" theo giờ Việt Nam (UTC+7) ─
+    const VN_OFFSET_MS = 7 * 3600000;
+    const toVNDateStr = (ms) => new Date(ms + VN_OFFSET_MS).toISOString().slice(0, 10);
+
+    // Ngày khách chọn — parse rồi tính theo giờ VN
+    const targetDateStr = toVNDateStr(new Date(date).getTime());
 
     // ── 1. Tìm tất cả RouteStop là điểm ĐÓN khách (nodeId_start) ────────────
     const startStops = await RouteStop.find({ stop_id: nodeId_start, is_pickup: true });
@@ -725,36 +730,34 @@ module.exports.getSearch = async (req, res) => {
       if (endStop) validPairs.push({ startStop, endStop });
     }
     if (!validPairs.length) return res.json({ success: true, data: [] });
-    console.log("validParris là : ", validPairs)
-    // ── 3. Ngày khách chọn ───────────────────────────────────────────────────
-    const targetDateStr = new Date(date).toISOString().slice(0, 10);
 
     const results = [];
     const seenRouteIds = new Set();
 
-    for (const { startStop, endStop } of validPairs) {
+    for (const { startStop } of validPairs) {
       const routeIdStr = String(startStop.route_id);
       if (seenRouteIds.has(routeIdStr)) continue;
 
-      // ── 4. estimated_time = số GIỜ kể từ departure_time đến startStop ─────
-      //    Đây là giá trị tuyệt đối, dùng thẳng, không cộng dồn
+      // ── 3. estimated_time = số GIỜ kể từ departure_time đến startStop ─────
+      //    Giá trị tuyệt đối (không cộng dồn)
       const hoursToPickup = Number(startStop.estimated_time ?? startStop[" estimated_time"]) || 0;
 
-      // ── 5. Tìm trip có ngày đến tại startStop khớp với ngày khách chọn ───
+      // ── 4. Tìm trip có ngày xe đến startStop (giờ VN) = ngày khách chọn ──
       const trips = await Trip.find({
         route_id: startStop.route_id,
         status: { $ne: "CANCELLED" },
       }).lean();
-      console.log("trip là : ", trips)
+
       const hasMatchingTrip = trips.some((trip) => {
         const departureMs = new Date(trip.departure_time).getTime();
         const arrivalAtPickupMs = departureMs + hoursToPickup * 3600000;
-        return new Date(arrivalAtPickupMs).toISOString().slice(0, 10) === targetDateStr;
+        // So sánh theo giờ Việt Nam, không phải UTC
+        return toVNDateStr(arrivalAtPickupMs) === targetDateStr;
       });
 
       if (!hasMatchingTrip) continue;
 
-      // ── 7. Lấy Route với populate đầy đủ ────────────────────────────────
+      // ── 5. Lấy Route với populate ─────────────────────────────────────────
       const route = await Route.findById(startStop.route_id)
         .populate({ path: "start_id", select: "name province" })
         .populate({ path: "stop_id", select: "name province" })
@@ -766,7 +769,6 @@ module.exports.getSearch = async (req, res) => {
       results.push(route);
     }
 
-    console.log("results (routes):", results);
     return res.json({ success: true, data: results });
   } catch (err) {
     console.error("[getSearch]", err);
