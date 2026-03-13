@@ -329,8 +329,7 @@ async function handleSelectTrip(parsed, context) {
 
   // Lấy sơ đồ ghế từ bus
   const bus = await Bus.findById(selectedTrip.bus_id).lean();
-  console.log("[DEBUG] bus_id:", selectedTrip.bus_id, "bus found:", !!bus, "seat_layout:", !!bus?.seat_layout);
-
+  
   let seatInfo = "";
   let allSeats = [];
 
