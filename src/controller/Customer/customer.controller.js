@@ -693,21 +693,20 @@ module.exports.searchRoutes = async (req, res) => {
 
 module.exports.getSearch = async (req, res) => {
   try {
-    var { nodeId_start, nodeId_end, date, name_start, name_end } = req.body;
-
+    // ✅ FIX 1: dùng let để có thể reassign khi tìm theo tên
+    let { nodeId_start, nodeId_end, date, name_start, name_end } = req.body;
+    console.log("node id và node end id ", nodeId_start, nodeId_end)
     if (!nodeId_start) {
       const searchStopStarts = await Stops.findOne({ province: { $regex: name_start, $options: "i" } }).select("-name");
-      console.log("search stop là : ", searchStopStarts)
-      nodeId_start = searchStopStarts.id
+      nodeId_start = searchStopStarts?._id;
     }
-    console.log("name end là: ", name_end)
     if (!nodeId_end) {
       const searchStopEnds = await Stops.findOne({ province: { $regex: name_end, $options: "i" } }).select("-name");
-      console.log("search stop là : ", searchStopEnds)
-      nodeId_end = searchStopEnds.id
+      // ✅ FIX 2: gán đúng biến nodeId_end (không phải nodeId_start)
+      nodeId_end = searchStopEnds?._id;
     }
-    console.log("2 id của tôi là : ", nodeId_start, "và", nodeId_end)
-    if (!date) {
+
+    if (!nodeId_start || !nodeId_end || !date) {
       return res.status(400).json({ message: "Thiếu nodeId_start, nodeId_end hoặc date" });
     }
 
@@ -726,7 +725,7 @@ module.exports.getSearch = async (req, res) => {
       if (endStop) validPairs.push({ startStop, endStop });
     }
     if (!validPairs.length) return res.json({ success: true, data: [] });
-
+    console.log("validParris là : ", validPairs)
     // ── 3. Ngày khách chọn ───────────────────────────────────────────────────
     const targetDateStr = new Date(date).toISOString().slice(0, 10);
 
@@ -737,36 +736,20 @@ module.exports.getSearch = async (req, res) => {
       const routeIdStr = String(startStop.route_id);
       if (seenRouteIds.has(routeIdStr)) continue;
 
-      // ── 4. Lấy TẤT CẢ stops của route, sort theo thứ tự ─────────────────
-      //    FIX: Tính CUMULATIVE hours tới startStop thay vì chỉ dùng
-      //         estimated_time của riêng startStop (vốn là incremental)
-      const allStopsOfRoute = await RouteStop.find({ route_id: startStop.route_id })
-        .sort({ stop_order: 1 })
-        .lean();
+      // ── 4. estimated_time = số GIỜ kể từ departure_time đến startStop ─────
+      //    Đây là giá trị tuyệt đối, dùng thẳng, không cộng dồn
+      const hoursToPickup = Number(startStop.estimated_time ?? startStop[" estimated_time"]) || 0;
 
-      // ── 5. Tính tổng giờ tích luỹ từ điểm xuất phát đến startStop ────────
-      //    FIX: Đọc cả field "estimated_time" lẫn " estimated_time" (có space)
-      //         vì MongoDB có thể lưu tên field bị lỗi dấu cách
-      let cumulativeHoursToPickup = 0;
-      for (const s of allStopsOfRoute) {
-        const h = Number(s.estimated_time ?? s[" estimated_time"]) || 0;
-        cumulativeHoursToPickup += h;
-        // Dừng lại SAU KHI cộng chính startStop
-        if (String(s._id) === String(startStop._id)) break;
-      }
-
-      // ── 6. Tìm trip có ngày đến tại startStop khớp với ngày khách chọn ───
+      // ── 5. Tìm trip có ngày đến tại startStop khớp với ngày khách chọn ───
       const trips = await Trip.find({
         route_id: startStop.route_id,
-        // status: { $ne: "CANCELLED" },
-        status: { $nin: ["CANCELLED", "FINISHED"] }
+        status: { $ne: "CANCELLED" },
       }).lean();
-
+      console.log("trip là : ", trips)
       const hasMatchingTrip = trips.some((trip) => {
         const departureMs = new Date(trip.departure_time).getTime();
-        const arrivalAtPickupMs = departureMs + cumulativeHoursToPickup * 3600000;
-        const arrivalAtPickup = new Date(arrivalAtPickupMs);
-        return arrivalAtPickup.toISOString().slice(0, 10) === targetDateStr;
+        const arrivalAtPickupMs = departureMs + hoursToPickup * 3600000;
+        return new Date(arrivalAtPickupMs).toISOString().slice(0, 10) === targetDateStr;
       });
 
       if (!hasMatchingTrip) continue;
@@ -890,17 +873,32 @@ module.exports.endPoint = async (req, res) => {
         message: "Not found"
       })
     }
+    const routeCheck = await RouteStop.findOne({
+      route_id: route_id,
+      stop_id: start_id,
+      // is_pickup: true
+    })
+    console.log("routeChekc là : ", routeCheck)
+    // start_id : id của routeStop
     const routeSegmentprices = await RouteSegmentPrices.find({
-      start_id: start_id,
+      start_id: routeCheck.id,
       route_id: route_id,
       bus_type_id: bus_type_id
       // is_active: true
     })
+    //   const routeSegmentprices = await RouteSegmentPrices.find({
+    //   id: start_id,
+    //   route_id: route_id,
+    //   bus_type_id: bus_type_id
+    //   // is_active: true
+    // })
+    // lấy được end_id cũng là id của 
     console.log("routeSegmentprices là : ", routeSegmentprices)
     const arr = []
+    // start_id và end_id : là  id của routerStop
     for (const router of routeSegmentprices) {
       const routeStop = await RouteStop.findOne({
-        stop_id: router.end_id,
+        _id: router.end_id,
         is_pickup: true
       })
         .populate("stop_id")
@@ -1084,10 +1082,24 @@ module.exports.locationPoint = async (req, res) => {
 module.exports.getPrice = async (req, res) => {
   try {
     const { route_id, start_id, end_id, bus_type_id } = req.body
+
+    console.log(" route_id, start_id, end_id , bus_type_id là: ", route_id, start_id, end_id, bus_type_id)
+    //  start và stop đang là điểm chuẩn
+    const routeCheck1 = await RouteStop.findOne({
+      route_id: route_id,
+      stop_id: start_id,
+      // is_pickup: true
+    })
+    const routeCheck2 = await RouteStop.findOne({
+      route_id: route_id,
+      stop_id: end_id,
+      // is_pickup: true
+    })
+
     const routesegmentprices = await RouteSegmentPrices.findOne({
       route_id: route_id,
-      start_id: start_id,
-      end_id: end_id,
+      start_id: routeCheck1.id,
+      end_id: routeCheck2.id,
       bus_type_id: bus_type_id
     })
     if (!routesegmentprices) {
