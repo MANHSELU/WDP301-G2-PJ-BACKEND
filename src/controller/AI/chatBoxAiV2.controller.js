@@ -24,7 +24,7 @@ function normalizeDate(text) {
     today.setDate(today.getDate() + 1);
     return today.toISOString().split("T")[0];
   }
-   if (t.includes("ngày hôm sau")) {
+  if (t.includes("ngày hôm sau")) {
     today.setDate(today.getDate() + 1);
     return today.toISOString().split("T")[0];
   }
@@ -67,47 +67,60 @@ function formatDateTime(dateStr) {
 
 // Gọi Ollama để parse intent từ tin nhắn user
 async function parseIntent(message, conversationHistory, context) {
+  const step = context?.step || "none";
   const systemPrompt = `
-Bạn là trợ lý đặt vé xe khách. Phân tích tin nhắn của khách hàng và trả về JSON.
+Bạn là trợ lý đặt vé xe khách thông minh. Phân tích tin nhắn tiếng Việt (có thể viết tắt, không dấu, lỗi chính tả, tiếng lóng, teencode) và trả về JSON.
 
-CONTEXT hiện tại: ${JSON.stringify(context || {})}
+BƯỚC HIỆN TẠI: "${step}"
+CONTEXT: ${JSON.stringify(context || {})}
 
-Các intent hợp lệ:
-- search_trip: Khách muốn tìm chuyến xe (cần from, to, date)
-- select_route: Khách chọn tuyến từ kết quả tìm kiếm (cần route_index: số thứ tự 1,2,3...)
-- select_trip: Khách chọn chuyến xe cụ thể (cần trip_index: số thứ tự 1,2,3...)
-- select_seat: Khách chọn ghế (cần seats: ["A1","A2"...])
-- confirm_booking: Khách xác nhận đặt vé (cần passenger_name, passenger_phone)
-- cancel: Khách muốn hủy/bắt đầu lại
-- greeting: Khách chào hỏi
-- unknown: Không hiểu
+QUY TẮC ƯU TIÊN (rất quan trọng):
+- Nếu step="pending_search" → khách đang bổ sung thông tin thiếu. Nếu khách nói tên thành phố/tỉnh (VD: "Đà Nẵng", "dn", "từ Huế") → intent="search_trip", điền vào from hoặc to tùy context. Nếu khách nói ngày (VD: "ngày mai", "15/3", "hôm nay") → intent="search_trip", điền vào date.
+- Nếu step="select_route" và khách nhắn số hoặc "1","2","cái đầu","cái sau","tuyến trên/dưới","ok cái 1" → intent="select_route"
+- Nếu step="select_trip" và khách nhắn số hoặc "chuyến sáng","chuyến tối","cái đầu","ok" → intent="select_trip"
+- Nếu step="select_seat" và khách nhắn ghế hoặc mã ghế → intent="select_seat"
+- Nếu step="confirm_booking" và khách cung cấp tên + sdt → intent="confirm_booking"
+- Luôn ưu tiên hiểu theo step hiện tại. VD: đang ở select_route mà khách nói "1" → chọn tuyến 1, KHÔNG PHẢI unknown.
+- Khi step="pending_search" và context có pendingTo nhưng thiếu from, nếu khách nói tên TP → đó là from. Ngược lại nếu thiếu to thì đó là to. Nếu thiếu date và khách nói ngày → đó là date.
 
-Trả về JSON duy nhất, KHÔNG có text khác:
-{
-  "intent": "...",
-  "from": "",
-  "to": "",
-  "date": "",
-  "route_index": 0,
-  "trip_index": 0,
-  "seats": [],
-  "passenger_name": "",
-  "passenger_phone": ""
-}
+Các intent:
+1. search_trip - Khách muốn tìm/hỏi chuyến xe:
+   "tôi muốn đi X ra Y", "có xe đi Y không", "mai có chuyến nào từ X tới Y hông", "cho tôi xem xe X-Y", "tìm vé X Y", "X đi Y ngày mai", "book vé đi Y", "đặt xe đi Y", "xe khách X Y", "có chuyến nào đi Y không ạ", "muốn về Y", "cần đi Y gấp", "check xe X Y", "lịch xe đi Y", "dn di hue", "sg ra hn", "có xe đi hn ko", "t muốn đi dn", "cho t đặt vé đi huế"
+   + from: tên thành phố/tỉnh đi. QUAN TRỌNG: Nếu khách KHÔNG nói rõ điểm đi → để from=""  (KHÔNG ĐƯỢC TỰ ĐOÁN)
+   + to: tên thành phố/tỉnh đến. Nếu không rõ → to=""
+   + date: ngày đi. QUAN TRỌNG: Nếu khách KHÔNG nói ngày → để date="" (KHÔNG ĐƯỢC TỰ ĐOÁN là "hôm nay"). Chỉ điền khi khách nói rõ: "hôm nay","ngày mai","mai","mốt","ngày kia","ngày hôm nay", dd/mm, dd/mm/yyyy
+   LƯU Ý viết tắt: "dn"="Đà Nẵng", "sg"/"hcm"="Hồ Chí Minh", "hn"="Hà Nội", "hp"="Hải Phòng", "ht"="Hà Tĩnh", "qn"="Quảng Ngãi"/"Quảng Nam", "bmt"="Buôn Ma Thuột"
 
-Ví dụ:
-- "tôi muốn đi Đà Nẵng ra Huế ngày mai" → {"intent":"search_trip","from":"Đà Nẵng","to":"Huế","date":"ngày mai"}
-- "chọn tuyến 1" hoặc "tuyến đầu tiên" → {"intent":"select_route","route_index":1}
-- "chọn chuyến 2" hoặc "chuyến thứ 2" → {"intent":"select_trip","trip_index":2}
-- "ghế A1 A2" hoặc "tôi chọn A1, A2" → {"intent":"select_seat","seats":["A1","A2"]}
-- "đặt vé, tên Nguyễn Văn A, sdt 0901234567" → {"intent":"confirm_booking","passenger_name":"Nguyễn Văn A","passenger_phone":"0901234567"}
-- "hủy" hoặc "bắt đầu lại" → {"intent":"cancel"}
-- "xin chào" → {"intent":"greeting"}
+2. select_route - Khách chọn tuyến:
+   "chọn tuyến 1", "tuyến đầu tiên", "cái đầu", "số 1", "1", "tuyến trên", "tuyến dưới", "cái thứ 2", "lấy tuyến cuối", "ok tuyến 1", "t chọn cái 1"
+   + route_index: số thứ tự (1-based)
+
+3. select_trip - Khách chọn chuyến:
+   "chọn chuyến 1", "chuyến đầu", "chuyến sáng", "chuyến tối", "cái 22h", "1", "chuyến cuối", "lấy chuyến 7h sáng"
+   + trip_index: số thứ tự (1-based)
+
+4. select_seat - Khách chọn ghế:
+   "ghế A1 A2", "lấy A1, A2", "A1 với A3", "2 ghế A1 A2", "chọn A1", "seat A1", "cho t A1 A2", "lấy 2 chỗ A1 A3"
+   + seats: ["A1","A2"]
+
+5. confirm_booking - Khách cung cấp thông tin đặt vé:
+   "đặt vé tên Nguyễn Văn A sdt 0901234567", "tên tôi là X, số 09...", "X - 09...", "book luôn, tên A phone 09...", "tên A sdt 09..."
+   + passenger_name: họ tên
+   + passenger_phone: số điện thoại
+
+6. cancel - Hủy/bắt đầu lại:
+   "hủy", "thôi", "bỏ", "làm lại", "bắt đầu lại", "reset", "ko đặt nữa", "bỏ đi", "quên đi"
+
+7. greeting - Chào hỏi:
+   "xin chào", "hello", "hi", "chào", "ê", "alo", "hey", "chào bạn", "bot ơi"
+
+8. unknown - Thật sự không liên quan gì đến đặt vé xe
+
+Trả về JSON duy nhất, KHÔNG kèm text nào khác:
+{"intent":"...","from":"","to":"","date":"","route_index":0,"trip_index":0,"seats":[],"passenger_name":"","passenger_phone":""}
 `;
 
-  const messages = [
-    { role: "system", content: systemPrompt },
-  ];
+  const messages = [{ role: "system", content: systemPrompt }];
 
   // Thêm lịch sử hội thoại gần nhất (tối đa 6 tin)
   if (conversationHistory && conversationHistory.length > 0) {
@@ -137,7 +150,8 @@ Ví dụ:
 
 async function handleGreeting() {
   return {
-    reply: "Xin chào! Tôi là trợ lý đặt vé xe khách. Bạn muốn đi đâu? Hãy cho tôi biết điểm đi, điểm đến và ngày đi nhé!",
+    reply:
+      "Xin chào! Tôi là trợ lý đặt vé xe khách. Bạn muốn đi đâu? Hãy cho tôi biết điểm đi, điểm đến và ngày đi nhé!",
     context: {},
   };
 }
@@ -160,7 +174,10 @@ async function handleSearchTrip(parsed, context) {
   }
 
   // Tìm route qua logic trực tiếp (không gọi API nội bộ)
-  const startStops = await RouteStop.find({ stop_id: fromStop._id, is_pickup: true });
+  const startStops = await RouteStop.find({
+    stop_id: fromStop._id,
+    is_pickup: true,
+  });
   if (!startStops.length) {
     return { reply: "Không có tuyến xe nào từ " + parsed.from, context };
   }
@@ -176,7 +193,10 @@ async function handleSearchTrip(parsed, context) {
   }
 
   if (!validPairs.length) {
-    return { reply: `Không có tuyến xe từ ${parsed.from} đến ${parsed.to}`, context };
+    return {
+      reply: `Không có tuyến xe từ ${parsed.from} đến ${parsed.to}`,
+      context,
+    };
   }
 
   const targetDateStr = new Date(date).toISOString().slice(0, 10);
@@ -187,8 +207,11 @@ async function handleSearchTrip(parsed, context) {
     const routeIdStr = String(startStop.route_id);
     if (seenRouteIds.has(routeIdStr)) continue;
 
-    const allStopsOfRoute = await RouteStop.find({ route_id: startStop.route_id })
-      .sort({ stop_order: 1 }).lean();
+    const allStopsOfRoute = await RouteStop.find({
+      route_id: startStop.route_id,
+    })
+      .sort({ stop_order: 1 })
+      .lean();
 
     let cumulativeHoursToPickup = 0;
     for (const s of allStopsOfRoute) {
@@ -205,7 +228,9 @@ async function handleSearchTrip(parsed, context) {
     const hasMatchingTrip = trips.some((trip) => {
       const departureMs = new Date(trip.departure_time).getTime();
       const arrivalAtPickupMs = departureMs + cumulativeHoursToPickup * 3600000;
-      return new Date(arrivalAtPickupMs).toISOString().slice(0, 10) === targetDateStr;
+      return (
+        new Date(arrivalAtPickupMs).toISOString().slice(0, 10) === targetDateStr
+      );
     });
 
     if (!hasMatchingTrip) continue;
@@ -255,12 +280,18 @@ async function handleSearchTrip(parsed, context) {
 
 async function handleSelectRoute(parsed, context) {
   if (!context.routes || !context.routes.length) {
-    return { reply: "Bạn chưa tìm chuyến xe. Hãy cho tôi biết bạn muốn đi đâu nhé!", context: {} };
+    return {
+      reply: "Bạn chưa tìm chuyến xe. Hãy cho tôi biết bạn muốn đi đâu nhé!",
+      context: {},
+    };
   }
 
   const idx = (parsed.route_index || 1) - 1;
   if (idx < 0 || idx >= context.routes.length) {
-    return { reply: `Vui lòng chọn từ 1 đến ${context.routes.length}`, context };
+    return {
+      reply: `Vui lòng chọn từ 1 đến ${context.routes.length}`,
+      context,
+    };
   }
 
   const selectedRoute = context.routes[idx];
@@ -279,7 +310,10 @@ async function handleSelectRoute(parsed, context) {
     .lean();
 
   if (!trips.length) {
-    return { reply: "Tuyến này hiện không có chuyến xe nào. Bạn thử tuyến khác nhé!", context };
+    return {
+      reply: "Tuyến này hiện không có chuyến xe nào. Bạn thử tuyến khác nhé!",
+      context,
+    };
   }
 
   let reply = `Tuyến ${selectedRoute.name} có ${trips.length} chuyến:\n\n`;
@@ -310,7 +344,10 @@ async function handleSelectRoute(parsed, context) {
 
 async function handleSelectTrip(parsed, context) {
   if (!context.trips || !context.trips.length) {
-    return { reply: "Bạn chưa chọn tuyến. Hãy tìm chuyến xe trước nhé!", context: {} };
+    return {
+      reply: "Bạn chưa chọn tuyến. Hãy tìm chuyến xe trước nhé!",
+      context: {},
+    };
   }
 
   const idx = (parsed.trip_index || 1) - 1;
@@ -329,7 +366,7 @@ async function handleSelectTrip(parsed, context) {
 
   // Lấy sơ đồ ghế từ bus
   const bus = await Bus.findById(selectedTrip.bus_id).lean();
-  
+
   let seatInfo = "";
   let allSeats = [];
 
@@ -341,13 +378,13 @@ async function handleSelectTrip(parsed, context) {
       let seatCounter = 1;
       for (let row = 1; row <= rows; row++) {
         const override = row_overrides?.find(
-          (r) => r.row_index === row && r.floor === floor
+          (r) => r.row_index === row && r.floor === floor,
         );
         (columns || []).forEach((col) => {
           let seatsInCol = col.seats_per_row;
           if (override) {
             const colOverride = override.column_overrides?.find(
-              (c) => c.column_name === col.name
+              (c) => c.column_name === col.name,
             );
             if (colOverride) seatsInCol = colOverride.seats;
           }
@@ -358,7 +395,6 @@ async function handleSelectTrip(parsed, context) {
       }
     }
   }
-
 
   const availableSeats = allSeats.filter((s) => !bookedSeats.includes(s));
 
@@ -376,7 +412,7 @@ async function handleSelectTrip(parsed, context) {
   if (startRouteStop && endRouteStop) {
     const priceDoc = await RouteSegmentPrices.findOne({
       route_id: context.selectedRouteId,
-      start_id: startRouteStop._id,  
+      start_id: startRouteStop._id,
       end_id: endRouteStop._id,
       bus_type_id: selectedTrip.bus_type_id,
     });
@@ -404,29 +440,43 @@ async function handleSelectTrip(parsed, context) {
       ticketPrice: price,
       startRouteStopId: startRouteStop ? String(startRouteStop._id) : null,
       endRouteStopId: endRouteStop ? String(endRouteStop._id) : null,
+      seatLayout: bus?.seat_layout || null,
     },
   };
 }
 
 async function handleSelectSeat(parsed, context) {
   if (!context.availableSeats || context.step !== "select_seat") {
-    return { reply: "Bạn chưa chọn chuyến xe. Hãy tìm chuyến trước nhé!", context: {} };
+    return {
+      reply: "Bạn chưa chọn chuyến xe. Hãy tìm chuyến trước nhé!",
+      context: {},
+    };
   }
 
   const seats = parsed.seats || [];
   if (!seats.length) {
-    return { reply: "Bạn chưa cho tôi biết muốn chọn ghế nào. Ví dụ: \"ghế A1, A2\"", context };
+    return {
+      reply: 'Bạn chưa cho tôi biết muốn chọn ghế nào. Ví dụ: "ghế A1, A2"',
+      context,
+    };
   }
 
   // Validate ghế
   const upperSeats = seats.map((s) => s.toUpperCase().trim());
-  const invalidSeats = upperSeats.filter((s) => !context.availableSeats.includes(s));
+  const invalidSeats = upperSeats.filter(
+    (s) => !context.availableSeats.includes(s),
+  );
   if (invalidSeats.length) {
-    const alreadyBooked = invalidSeats.filter((s) => context.bookedSeats.includes(s));
-    const notExist = invalidSeats.filter((s) => !context.bookedSeats.includes(s));
+    const alreadyBooked = invalidSeats.filter((s) =>
+      context.bookedSeats.includes(s),
+    );
+    const notExist = invalidSeats.filter(
+      (s) => !context.bookedSeats.includes(s),
+    );
 
     let msg = "";
-    if (alreadyBooked.length) msg += `Ghế ${alreadyBooked.join(", ")} đã được đặt. `;
+    if (alreadyBooked.length)
+      msg += `Ghế ${alreadyBooked.join(", ")} đã được đặt. `;
     if (notExist.length) msg += `Ghế ${notExist.join(", ")} không tồn tại. `;
     msg += `\nGhế còn trống: ${context.availableSeats.join(", ")}`;
     return { reply: msg, context };
@@ -466,7 +516,10 @@ async function handleConfirmBooking(parsed, context, userId) {
   }
 
   if (context.step !== "confirm_booking" || !context.selectedSeats) {
-    return { reply: "Bạn chưa chọn ghế. Hãy bắt đầu lại từ đầu nhé!", context: {} };
+    return {
+      reply: "Bạn chưa chọn ghế. Hãy bắt đầu lại từ đầu nhé!",
+      context: {},
+    };
   }
 
   const name = parsed.passenger_name?.trim();
@@ -474,14 +527,19 @@ async function handleConfirmBooking(parsed, context, userId) {
 
   if (!name || !phone) {
     return {
-      reply: "Vui lòng cung cấp đầy đủ họ tên và số điện thoại.\nVí dụ: \"Đặt vé, tên Nguyễn Văn A, sdt 0901234567\"",
+      reply:
+        'Vui lòng cung cấp đầy đủ họ tên và số điện thoại.\nVí dụ: "Đặt vé, tên Nguyễn Văn A, sdt 0901234567"',
       context,
     };
   }
 
   // Validate phone
   if (!/^(0[0-9]{8,10})$/.test(phone)) {
-    return { reply: "Số điện thoại không hợp lệ. Vui lòng nhập lại (ví dụ: 0901234567)", context };
+    return {
+      reply:
+        "Số điện thoại không hợp lệ. Vui lòng nhập lại (ví dụ: 0901234567)",
+      context,
+    };
   }
 
   // Tạo booking với transaction
@@ -494,17 +552,24 @@ async function handleConfirmBooking(parsed, context, userId) {
     if (!trip || trip.status !== "SCHEDULED") {
       await session.abortTransaction();
       session.endSession();
-      return { reply: "Chuyến xe này không còn nhận đặt vé. Bạn thử chuyến khác nhé!", context: {} };
+      return {
+        reply: "Chuyến xe này không còn nhận đặt vé. Bạn thử chuyến khác nhé!",
+        context: {},
+      };
     }
 
     // Kiểm tra ghế có bị đặt chưa (real-time)
     const existingOrders = await BookingOrder.find({
       trip_id: context.selectedTripId,
       order_status: { $ne: "CANCELLED" },
-    }).select("seat_labels").session(session);
+    })
+      .select("seat_labels")
+      .session(session);
 
     const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
-    const conflictSeats = context.selectedSeats.filter((s) => bookedSeats.includes(s));
+    const conflictSeats = context.selectedSeats.filter((s) =>
+      bookedSeats.includes(s),
+    );
 
     if (conflictSeats.length) {
       await session.abortTransaction();
@@ -515,31 +580,51 @@ async function handleConfirmBooking(parsed, context, userId) {
       };
     }
 
+    // Lấy thông tin điểm đón/trả
+    const startRouteStop = await RouteStop.findById(context.startRouteStopId)
+      .populate("stop_id", "name specific_location")
+      .session(session);
+    const endRouteStop = await RouteStop.findById(context.endRouteStopId)
+      .populate("stop_id", "name specific_location")
+      .session(session);
+
     // Tạo BookingOrder
     const [order] = await BookingOrder.create(
-      [{
-        user_id: userId,
-        trip_id: context.selectedTripId,
-        start_id: context.startRouteStopId,
-        end_id: context.endRouteStopId,
-        seat_labels: context.selectedSeats,
-        order_status: "CREATED",
-        total_price: context.totalPrice,
-        passenger_name: name,
-        passenger_phone: phone,
-      }],
-      { session }
+      [
+        {
+          user_id: userId,
+          trip_id: context.selectedTripId,
+          start_id: context.startRouteStopId,
+          end_id: context.endRouteStopId,
+          seat_labels: context.selectedSeats,
+          order_status: "CREATED",
+          total_price: context.totalPrice,
+          passenger_name: name,
+          passenger_phone: phone,
+          start_info: {
+            city: startRouteStop?.stop_id?.name || context.from,
+            specific_location: startRouteStop?.stop_id?.specific_location || "",
+          },
+          end_info: {
+            city: endRouteStop?.stop_id?.name || context.to,
+            specific_location: endRouteStop?.stop_id?.specific_location || "",
+          },
+        },
+      ],
+      { session },
     );
 
     // Tạo BookingPayment
     await BookingPayment.create(
-      [{
-        order_id: order._id,
-        payment_method: "CASH_ON_BOARD",
-        amount: context.totalPrice,
-        payment_status: "PENDING",
-      }],
-      { session }
+      [
+        {
+          order_id: order._id,
+          payment_method: "CASH_ON_BOARD",
+          amount: context.totalPrice,
+          payment_status: "PENDING",
+        },
+      ],
+      { session },
     );
 
     await session.commitTransaction();
@@ -548,6 +633,7 @@ async function handleConfirmBooking(parsed, context, userId) {
     let reply = `Đặt vé thành công!\n\n`;
     reply += `Mã đơn: ${order._id}\n`;
     reply += `Tuyến: ${context.selectedRouteName}\n`;
+    reply += `Đoạn: ${context.from} → ${context.to}\n`;
     reply += `Khởi hành: ${formatDateTime(context.selectedTripDeparture)}\n`;
     reply += `Ghế: ${context.selectedSeats.join(", ")}\n`;
     reply += `Hành khách: ${name} - ${phone}\n`;
@@ -557,10 +643,15 @@ async function handleConfirmBooking(parsed, context, userId) {
 
     return { reply, context: {} };
   } catch (err) {
-    try { await session.abortTransaction(); } catch (_) {}
+    try {
+      await session.abortTransaction();
+    } catch (_) {}
     session.endSession();
     console.error("[handleConfirmBooking]", err);
-    return { reply: "Có lỗi xảy ra khi đặt vé. Vui lòng thử lại sau!", context };
+    return {
+      reply: "Có lỗi xảy ra khi đặt vé. Vui lòng thử lại sau!",
+      context,
+    };
   }
 }
 
@@ -576,6 +667,60 @@ exports.chatAIV2 = async (req, res) => {
       return res.status(400).json({ message: "Tin nhắn không được trống" });
     }
 
+    // Nếu đang ở bước pending_search, xử lý trực tiếp không cần AI parse
+    if (context?.step === "pending_search") {
+      const msg = message.trim();
+      const msgLower = msg.toLowerCase();
+
+      // Check xem message có phải là ngày không
+      const dateKeywords = ["hôm nay", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "ngay mai"];
+      const isDate = dateKeywords.some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
+
+      let pendingFrom = context.pendingFrom || "";
+      let pendingTo = context.pendingTo || "";
+      let pendingDate = context.pendingDate || "";
+
+      if (isDate) {
+        pendingDate = msg;
+      } else if (!pendingFrom) {
+        pendingFrom = msg;
+      } else if (!pendingTo) {
+        pendingTo = msg;
+      }
+
+      // Check còn thiếu gì
+      if (!pendingTo && !pendingFrom) {
+        return res.json({
+          reply: 'Bạn muốn đi từ đâu đến đâu ạ?',
+          context: { ...context, pendingFrom, pendingTo, pendingDate },
+        });
+      } else if (!pendingFrom) {
+        return res.json({
+          reply: `Bạn muốn đi đến ${pendingTo}. Vậy bạn xuất phát từ đâu ạ?`,
+          context: { ...context, pendingFrom, pendingTo, pendingDate },
+        });
+      } else if (!pendingTo) {
+        return res.json({
+          reply: `Bạn xuất phát từ ${pendingFrom}. Vậy bạn muốn đến đâu ạ?`,
+          context: { ...context, pendingFrom, pendingTo, pendingDate },
+        });
+      } else if (!pendingDate) {
+        return res.json({
+          reply: `Tìm chuyến ${pendingFrom} → ${pendingTo}. Bạn muốn đi ngày nào ạ? (Ví dụ: "ngày mai", "15/3", "hôm nay")`,
+          context: { ...context, pendingFrom, pendingTo, pendingDate },
+        });
+      } else {
+        // Đủ thông tin → search
+        const parsed = { intent: "search_trip", from: pendingFrom, to: pendingTo, date: pendingDate };
+        const searchResult = await handleSearchTrip(parsed, {});
+        return res.json({
+          reply: searchResult.reply,
+          context: searchResult.context,
+          requireAuth: searchResult.requireAuth || false,
+        });
+      }
+    }
+
     // Parse intent từ Ollama
     let parsed;
     try {
@@ -583,7 +728,8 @@ exports.chatAIV2 = async (req, res) => {
     } catch (parseErr) {
       console.error("[parseIntent error]", parseErr.message);
       return res.json({
-        reply: "Xin lỗi, tôi không hiểu yêu cầu của bạn. Bạn có thể nói rõ hơn được không?\n\nVí dụ: \"Tôi muốn đi Đà Nẵng ra Huế ngày mai\"",
+        reply:
+          'Xin lỗi, tôi không hiểu yêu cầu của bạn. Bạn có thể nói rõ hơn được không?\n\nVí dụ: "Tôi muốn đi Đà Nẵng ra Huế ngày mai"',
         context: context || {},
       });
     }
@@ -598,13 +744,50 @@ exports.chatAIV2 = async (req, res) => {
         break;
 
       case "search_trip":
-        if (!parsed.from || !parsed.to) {
-          result = {
-            reply: "Bạn muốn đi từ đâu đến đâu? Hãy cho tôi biết điểm đi và điểm đến nhé!\n\nVí dụ: \"Tôi muốn đi từ Đà Nẵng đến Huế ngày mai\"",
-            context: context || {},
-          };
-        } else {
-          result = await handleSearchTrip(parsed, context || {});
+        {
+          // Merge thông tin từ context trước (nếu đang hỏi bổ sung)
+          const from = parsed.from || context?.pendingFrom || "";
+          const to = parsed.to || context?.pendingTo || "";
+          // Chỉ lấy date nếu khách thật sự nói ngày, không tự đoán
+          let date = context?.pendingDate || "";
+          if (parsed.date && parsed.date !== "") {
+            // Kiểm tra xem parsed.date có phải AI tự đoán "hôm nay" không
+            // Nếu message gốc không chứa keyword ngày → bỏ qua
+            const msgLower = message.toLowerCase();
+            const hasDateKeyword = ["hôm nay", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "ngay mai"]
+              .some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
+            if (hasDateKeyword) {
+              date = parsed.date;
+            }
+          }
+
+          if (!to && !from) {
+            result = {
+              reply: 'Bạn muốn đi từ đâu đến đâu? Hãy cho tôi biết điểm đi và điểm đến nhé!\n\nVí dụ: "Tôi muốn đi từ Đà Nẵng đến Huế ngày mai"',
+              context: { ...(context || {}), step: "pending_search" },
+            };
+          } else if (!from) {
+            result = {
+              reply: `Bạn muốn đi đến ${to}. Vậy bạn xuất phát từ đâu ạ?`,
+              context: { ...(context || {}), step: "pending_search", pendingTo: to, pendingDate: date },
+            };
+          } else if (!to) {
+            result = {
+              reply: `Bạn xuất phát từ ${from}. Vậy bạn muốn đến đâu ạ?`,
+              context: { ...(context || {}), step: "pending_search", pendingFrom: from, pendingDate: date },
+            };
+          } else if (!date) {
+            result = {
+              reply: `Tìm chuyến ${from} → ${to}. Bạn muốn đi ngày nào ạ? (Ví dụ: "ngày mai", "15/3", "hôm nay")`,
+              context: { ...(context || {}), step: "pending_search", pendingFrom: from, pendingTo: to },
+            };
+          } else {
+            // Đủ thông tin → search
+            parsed.from = from;
+            parsed.to = to;
+            parsed.date = date;
+            result = await handleSearchTrip(parsed, context || {});
+          }
         }
         break;
 
@@ -626,14 +809,16 @@ exports.chatAIV2 = async (req, res) => {
 
       case "cancel":
         result = {
-          reply: "Đã hủy. Bạn muốn tìm chuyến xe mới không? Hãy cho tôi biết bạn muốn đi đâu nhé!",
+          reply:
+            "Đã hủy. Bạn muốn tìm chuyến xe mới không? Hãy cho tôi biết bạn muốn đi đâu nhé!",
           context: {},
         };
         break;
 
       default:
         result = {
-          reply: "Tôi chưa hiểu yêu cầu của bạn. Bạn có thể:\n• Tìm chuyến: \"Tôi muốn đi Đà Nẵng ra Huế ngày mai\"\n• Chọn tuyến: \"Chọn tuyến 1\"\n• Chọn chuyến: \"Chọn chuyến 2\"\n• Chọn ghế: \"Ghế A1, A2\"\n• Đặt vé: \"Đặt vé, tên Nguyễn Văn A, sdt 0901234567\"",
+          reply:
+            'Tôi chưa hiểu yêu cầu của bạn. Bạn có thể:\n• Tìm chuyến: "Tôi muốn đi Đà Nẵng ra Huế ngày mai"\n• Chọn tuyến: "Chọn tuyến 1"\n• Chọn chuyến: "Chọn chuyến 2"\n• Chọn ghế: "Ghế A1, A2"\n• Đặt vé: "Đặt vé, tên Nguyễn Văn A, sdt 0901234567"',
           context: context || {},
         };
     }

@@ -5,7 +5,9 @@ const checkClient = require("./../middleware/auth")
 const driverCheck = require("./../router/Driver/driver.check.routes")
 const adminCheck = require("./Admin/admin.check.routes");
 const adminNotCheck = require("./Admin/admin.notcheck.routes");
-const assistantCheck = require("./Assistant Driver/assistantDriver.check.routes.js");
+const assistantCheck = require("./Assistant Driver/assistantDriver.check.routes.js")
+const ROLES = require("./../constants/roles.js");
+const commonCheck = require("./Common/common.check.routes");
 const aiCheckV2 = require("./Ai/ai.checkroutes.js");
 const aiNotCheckV2 = require("./Ai/ai.notcheckV2.routes.js");
 const aiNotCheck = require("./Ai/ai.notcheckroutes.js")
@@ -19,7 +21,7 @@ module.exports = [
     middlewares:
       [
         checkClient.checkaccount,
-        // checkClient.checkRole("696cd1f7cd7d3a094f45fd4b")
+        checkClient.checkRole(ROLES.CUSTOMER),
       ],
     router: clientcheck
   },
@@ -28,7 +30,7 @@ module.exports = [
     middlewares:
       [
         checkClient.checkaccount,
-        // checkClient.checkRole("696cd1f7cd7d3a094f45fd4b")
+        checkClient.checkRole(ROLES.BUS_ASSISTANT),
       ],
     router: assistantCheck
   },
@@ -40,25 +42,24 @@ module.exports = [
     prefix: "/api/driver/check",
     middlewares: [
       checkClient.checkaccount,
-      // checkClient.checkRole("6989d2d5753034e791da3d2c")
+      checkClient.checkRole(ROLES.DRIVER),
     ],
     router: driverCheck
   },
   {
     prefix: "/api/admin/check",
-    middlewares: [checkClient.checkaccount],
-    router: adminCheck,
-  },
-  {
-    prefix: "/api/admin/check",
-    middlewares: [checkClient.checkaccount],
+    middlewares: [
+      checkClient.checkaccount,
+      checkClient.checkRole(ROLES.ADMIN),
+    ],
+
     router: adminCheck
   },
   {
     prefix: "/api/admin/notcheck",
     router: adminNotCheck
   },
-    {
+  {
     prefix: "/api/ai/notcheck",
     router: aiNotCheck
   },
@@ -71,4 +72,12 @@ module.exports = [
   middlewares: [checkClient.checkaccount],
   router: aiCheckV2
 },
+  {
+    prefix: "/api/common/check",
+    middlewares: [
+      checkClient.checkaccount,  // ✅ chỉ verify token
+      // ❌ KHÔNG có checkRole → mọi role đều vào được
+    ],
+    router: commonCheck,
+  },
 ];
