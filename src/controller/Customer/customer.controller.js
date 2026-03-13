@@ -1706,3 +1706,37 @@ module.exports.getOrderHistory = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
   }
 };
+
+module.exports.getRoutesToday = async (req, res) => {
+  try {
+    const VN_OFFSET_MS = 7 * 3600000;
+    const nowVN = new Date(Date.now() + VN_OFFSET_MS);
+    const todayStr = nowVN.toISOString().slice(0, 10);
+
+    const todayEndUTC = new Date(todayStr + "T23:59:59.999+07:00");
+
+    // departure_time phải: lớn hơn "bây giờ" VÀ còn trong ngày hôm nay
+    const tripsToday = await Trip.find({
+      status: { $ne: "CANCELLED" },
+      departure_time: {
+        $gte: new Date(), // ← chưa khởi hành
+        $lte: todayEndUTC, // ← vẫn trong hôm nay
+      },
+    }).lean();
+
+    if (!tripsToday.length) return res.json({ success: true, data: [] });
+
+    const routeIds = [...new Set(tripsToday.map((t) => String(t.route_id)))];
+
+    const routes = await Route.find({ _id: { $in: routeIds } })
+      .populate({ path: "start_id", select: "name province" })
+      .populate({ path: "stop_id", select: "name province" })
+      .lean();
+
+    return res.json({ success: true, data: routes });
+  } catch (err) {
+    console.error("[getRoutesToday]", err);
+    return res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+};
+
