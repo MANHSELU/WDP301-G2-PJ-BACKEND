@@ -5,7 +5,10 @@ const checkClient = require("./../middleware/auth")
 const driverCheck = require("./../router/Driver/driver.check.routes")
 const adminCheck = require("./Admin/admin.check.routes");
 const adminNotCheck = require("./Admin/admin.notcheck.routes");
-const assistantCheck = require("./Assistant Driver/assistantDriver.check.routes.js")
+const assistantCheck = require("./Assistant Driver/assistantDriver.check.routes.js");
+const aiCheckV2 = require("./Ai/ai.checkroutes.js");
+const aiNotCheckV2 = require("./Ai/ai.notcheckV2.routes.js");
+const aiNotCheck = require("./Ai/ai.notcheckroutes.js")
 module.exports = [
   {
     prefix: "/api/customer/notcheck",
@@ -55,4 +58,17 @@ module.exports = [
     prefix: "/api/admin/notcheck",
     router: adminNotCheck
   },
+    {
+    prefix: "/api/ai/notcheck",
+    router: aiNotCheck
+  },
+  {
+  prefix: "/api/ai/notcheck/v2",
+  router: aiNotCheckV2
+},
+{
+  prefix: "/api/ai/check",
+  middlewares: [checkClient.checkaccount],
+  router: aiCheckV2
+},
 ];

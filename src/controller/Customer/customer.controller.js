@@ -776,6 +776,7 @@ module.exports.getSearch = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
+
 module.exports.viewTripBus = async (req, res) => {
   try {
     const { route_id } = req.body

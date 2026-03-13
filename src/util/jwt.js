@@ -6,7 +6,7 @@ const generateToken = (userId) => {
     return jwt.sign(
         { sub: userId },
         SECRET_KEY,
-        { expiresIn: "1h", algorithm: "HS256" }
+        { expiresIn: "24h", algorithm: "HS256" }
     );
 };
 

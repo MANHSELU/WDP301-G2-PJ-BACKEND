@@ -1715,6 +1715,8 @@ module.exports.getGeoOfStopLocation = async (req, res) => {
     console.log("2")
     return res.status(200).json({ coordinates });
   } catch (error) {
+        console.error("FULL ERROR:", error);
+
     return res.status(500).json({ message: error.message });
   }
 };

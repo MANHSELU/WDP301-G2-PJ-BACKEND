@@ -13,6 +13,7 @@
     "seed:staff": "node src/seeds/import-staff-from-json.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@mapbox/polyline": "^1.2.1",
     "@turf/turf": "^7.3.4",
     "accepts": "^2.0.0",
