@@ -13,32 +13,47 @@ const BookingPaymentSchema = new mongoose.Schema(
             enum: ["ONLINE", "CASH_ON_BOARD"],
             required: true,
         },
-
+        payment_gateway: {
+            type: String,
+            enum: ["BANK", "NONE"],
+            default: "BANK",
+        },
         amount: {
             type: Number,
             required: true,
             min: 0,
         },
-
+        currency: {
+            type: String,
+            default: "VND",
+        },
         payment_status: {
             type: String,
             enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
             default: "PENDING",
         },
-
-        collected_by: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "User",
-            required: false, // chỉ có khi CASH_ON_BOARD
+        transaction_code: {
+            type: String,
+            default: null, // mã giao dịch từ SePay
         },
-
+        // thời điểm thanh toán thành công
         paid_at: {
             type: Date,
-            required: false,
+            default: null,
+        },
+        // số tiền hoàn lại nếu hủy vé
+        refund_amount: {
+            type: Number,
+            default: 0,
+        },
+        //Lưu thời điểm hoàn tiền.
+        refunded_at: {
+            type: Date,
+            default: null,
         },
     },
     {
-        timestamps: { createdAt: "created_at", updatedAt: false },
+        timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
     }
 );
 

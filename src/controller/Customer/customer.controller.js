@@ -1325,7 +1325,189 @@ module.exports.getPrice = async (req, res) => {
 //     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
 //   }
 // }
+// module.exports.createBooking = async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     const {
+//       user_id,
+//       trip_id,
+//       start_id,
+//       end_id,
+//       seat_labels,      // string[] — ["A1", "A2"]
+//       ticket_price,
+//       payment_method = "CASH_ON_BOARD",
+//       passenger_name,
+//       passenger_phone,
+//       start_info,   // { city, specific_location }
+//       end_info,     // { city, specific_location }
+//     } = req.body;
+
+//     /* ════════════════════════════════════
+//        1. Validate input
+//     ════════════════════════════════════ */
+//     if (!user_id || !trip_id || !start_id || !end_id) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({
+//         message: "Thiếu thông tin bắt buộc (user_id, trip_id, start_id, end_id)",
+//       });
+//     }
+//     if (!Array.isArray(seat_labels) || seat_labels.length === 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Vui lòng chọn ít nhất 1 ghế" });
+//     }
+//     if (!passenger_name?.trim() || !passenger_phone?.trim()) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Thiếu họ tên hoặc số điện thoại hành khách" });
+//     }
+//     if (!ticket_price || Number(ticket_price) <= 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Giá vé không hợp lệ" });
+//     }
+//     if (!["ONLINE", "CASH_ON_BOARD"].includes(payment_method)) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Phương thức thanh toán không hợp lệ" });
+//     }
+
+//     /* ════════════════════════════════════
+//        2. Kiểm tra chuyến xe
+//     ════════════════════════════════════ */
+//     const trip = await Trip.findById(trip_id).session(session);
+//     if (!trip) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(404).json({ message: "Không tìm thấy chuyến xe" });
+//     }
+//     if (trip.status !== "SCHEDULED") {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Chuyến xe không còn nhận đặt vé" });
+//     }
+
+//     /* ════════════════════════════════════
+//        3. Kiểm tra ghế đã được đặt chưa
+//        → query BookingOrder theo trip_id + seat_id
+//        (BookingOrder không có seat_id trực tiếp nên
+//         ta check qua các order đã tồn tại của cùng trip)
+//     ════════════════════════════════════ */
+
+//     // Lấy tất cả order của trip này còn active (không bị CANCELLED)
+//     const existingOrders = await BookingOrder.find({
+//       trip_id,
+//       order_status: { $ne: "CANCELLED" },
+//     })
+//       .select("seat_labels")
+//       .session(session);
+
+//     // Gom tất cả ghế đã đặt thành 1 mảng phẳng
+//     const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
+
+//     // Tìm ghế bị trùng
+//     const conflictSeats = seat_labels.filter((s) => bookedSeats.includes(s));
+//     if (conflictSeats.length > 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(409).json({
+//         message: `Ghế ${conflictSeats.join(", ")} đã được đặt. Vui lòng chọn ghế khác.`,
+//       });
+//     }
+
+//     /* ════════════════════════════════════
+//        4. Tính tổng tiền
+//     ════════════════════════════════════ */
+//     const price = Number(ticket_price);
+//     const total_price = seat_labels.length * price;
+
+//     /* ════════════════════════════════════
+//        5. Tạo BookingOrder
+//     ════════════════════════════════════ */
+//     const [order] = await BookingOrder.create(
+//       [
+//         {
+//           user_id,
+//           trip_id,
+//           start_id,
+//           end_id,
+//           seat_labels,
+//           order_status: "CREATED",
+//           start_info: {
+//             city: start_info?.city ?? "",
+//             specific_location: start_info?.specific_location ?? "",
+//           },
+//           end_info: {
+//             city: end_info?.city ?? "",
+//             specific_location: end_info?.specific_location ?? "",
+//           },
+//           total_price,
+//           passenger_name: passenger_name.trim(),
+//           passenger_phone: passenger_phone.trim(),
+//         },
+//       ],
+//       { session }
+//     );
+
+//     /* ════════════════════════════════════
+//        6. Tạo BookingPayment
+//     ════════════════════════════════════ */
+//     const [payment] = await BookingPayment.create(
+//       [
+//         {
+//           order_id: order._id,
+//           payment_method,
+//           amount: total_price,
+//           payment_status: "PENDING",
+//         },
+//       ],
+//       { session }
+//     );
+
+//     /* ════════════════════════════════════
+//        7. Commit
+//     ════════════════════════════════════ */
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     return res.status(201).json({
+//       message: "Đặt vé thành công",
+//       data: {
+//         order: {
+//           _id: order._id,
+//           order_status: order.order_status,
+//           total_price: order.total_price,
+//           seat_labels: order.seat_labels,
+//           created_at: order.created_at,
+//         },
+//         payment: {
+//           _id: payment._id,
+//           payment_method: payment.payment_method,
+//           amount: payment.amount,
+//           payment_status: payment.payment_status,
+//         },
+//         summary: {
+//           total_seats: seat_labels.length,
+//           total_price,
+//           passenger_name: passenger_name.trim(),
+//           passenger_phone: passenger_phone.trim(),
+//         },
+//       },
+//     });
+//   } catch (err) {
+//     try {
+//       await session.abortTransaction();
+//     } catch (_) { }
+//     session.endSession();
+//     console.error("[createBooking] Error:", err);
+//     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+//   }
+// };
 module.exports.createBooking = async (req, res) => {
+  console.log("chạy vào create booking")
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -1392,29 +1574,35 @@ module.exports.createBooking = async (req, res) => {
 
     /* ════════════════════════════════════
        3. Kiểm tra ghế đã được đặt chưa
-       → query BookingOrder theo trip_id + seat_id
-       (BookingOrder không có seat_id trực tiếp nên
-        ta check qua các order đã tồn tại của cùng trip)
+       Logic khoá ghế:
+         - order_status = "PAID"    → block vĩnh viễn (đã thanh toán)
+         - order_status = "CREATED" → block tạm 15 phút (chờ QR / tiền mặt)
+         - order_status = "CANCELLED" → bỏ qua, ghế tự do
     ════════════════════════════════════ */
 
-    // Lấy tất cả order của trip này còn active (không bị CANCELLED)
+    const HOLD_MS = 3 * 60 * 1000; // 15 phút tính bằng ms
+    const holdCutoff = new Date(Date.now() - HOLD_MS);
+
     const existingOrders = await BookingOrder.find({
       trip_id,
-      order_status: { $ne: "CANCELLED" },
+      $or: [
+        { order_status: "PAID" },
+        { order_status: "CREATED", created_at: { $gte: holdCutoff } },
+      ],
     })
       .select("seat_labels")
       .session(session);
 
-    // Gom tất cả ghế đã đặt thành 1 mảng phẳng
+    // Gom tất cả ghế bị khoá thành 1 mảng phẳng
     const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
 
-    // Tìm ghế bị trùng
+    // Tìm ghế bị trùng với ghế khách đang chọn
     const conflictSeats = seat_labels.filter((s) => bookedSeats.includes(s));
     if (conflictSeats.length > 0) {
       await session.abortTransaction();
       session.endSession();
       return res.status(409).json({
-        message: `Ghế ${conflictSeats.join(", ")} đã được đặt. Vui lòng chọn ghế khác.`,
+        message: `Ghế ${conflictSeats.join(", ")} đang được giữ hoặc đã được đặt. Vui lòng chọn ghế khác.`,
       });
     }
 
@@ -1460,6 +1648,7 @@ module.exports.createBooking = async (req, res) => {
         {
           order_id: order._id,
           payment_method,
+          payment_gateway: payment_method === "ONLINE" ? "BANK" : "NONE",
           amount: total_price,
           payment_status: "PENDING",
         },
@@ -1506,7 +1695,6 @@ module.exports.createBooking = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
   }
 };
-
 module.exports.getBookedSeats = async (req, res) => {
   try {
     // ── start_id, end_id là RouteStop._id của khách đang xem ─────────────────
