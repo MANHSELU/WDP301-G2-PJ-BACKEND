@@ -255,9 +255,8 @@ module.exports.getAssistantTripDetail = async (req, res) => {
         const assistantId = res.locals.user?.id;
         const { tripId } = req.params;
 
-        if (!assistantId) {
+        if (!assistantId)
             return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
-        }
 
         const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId })
             .populate({
@@ -273,17 +272,12 @@ module.exports.getAssistantTripDetail = async (req, res) => {
                 select: "license_plate bus_type_id",
                 populate: { path: "bus_type_id", select: "name seats_count" },
             })
-            .populate({
-                path: "drivers.driver_id",
-                select: "name phone",
-            })
+            .populate({ path: "drivers.driver_id", select: "name phone" })
             .lean();
 
-        if (!trip) {
+        if (!trip)
             return res.status(404).json({ success: false, message: "Không tìm thấy chuyến xe" });
-        }
 
-        // Booking của chuyến này
         const bookings = await BookingOrder.find({
             trip_id: tripId,
             order_status: { $ne: "CANCELLED" },
@@ -297,6 +291,12 @@ module.exports.getAssistantTripDetail = async (req, res) => {
             seat_labels: b.seat_labels || [],
             total_price: b.total_price || 0,
             order_status: b.order_status,
+            is_boarded: b.is_boarded ?? false,
+            boarded_at: b.boarded_at ?? null,
+            is_alighted: b.is_alighted ?? false,
+            alighted_at: b.alighted_at ?? null,
+            start_info: b.start_info ?? { city: "", specific_location: "" },
+            end_info: b.end_info ?? { city: "", specific_location: "" },
             created_at: b.created_at,
         }));
 
@@ -330,65 +330,76 @@ module.exports.getAssistantTripDetail = async (req, res) => {
             })),
         };
 
-        return res.status(200).json({
-            success: true,
-            data: { trip: tripDetail, passengers },
-        });
+        return res.status(200).json({ success: true, data: { trip: tripDetail, passengers } });
     } catch (err) {
         console.error("[getAssistantTripDetail]", err);
         return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
     }
 };
 module.exports.updateBoarded = async (req, res) => {
-    console.log("đã lên xe")
     try {
-        const assistantId = res.locals.user?.id;
         const { orderId } = req.params;
-        const { is_boarded } = req.body;
-        console.log("is_boarded là : ", is_boarded)
+        const { is_boarded, is_alighted } = req.body;
 
-        if (!assistantId)
-            return res.status(401).json({ success: false, message: "Không xác định tài khoản" });
+        /* ── Validate ── */
         if (typeof is_boarded !== "boolean")
-            return res.status(400).json({ success: false, message: "is_boarded phải là true hoặc false" });
-        if (is_boarded == true) {
-            trangthai = 'PAID'
-        } else {
-            trangthai = 'CANCELLED'
-        }
-        const order = await BookingOrder.findById(orderId).lean();
+            return res.status(400).json({ success: false, message: "is_boarded phải là boolean" });
+
+        const order = await BookingOrder.findById(orderId)
+            .select("_id is_boarded is_alighted order_status");
+
         if (!order)
-            return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt vé" });
-        if (order.order_status !== "CREATED")
-            return res.status(400).json({ success: false, message: "Chỉ cập nhật được đơn ở trạng thái CREATED" });
+            return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
 
-        // Kiểm tra chuyến thuộc phụ xe này
-        const trip = await Trip.findOne({ _id: order.trip_id, assistant_id: assistantId }).lean();
-        if (!trip)
-            return res.status(403).json({ success: false, message: "Bạn không có quyền cập nhật chuyến này" });
-        if (!["SCHEDULED", "RUNNING"].includes(trip.status))
-            return res.status(400).json({ success: false, message: "Chuyến không ở trạng thái có thể cập nhật" });
+        const update = {};
 
-        const updated = await BookingOrder.findByIdAndUpdate(
-            orderId,
-            {
-                order_status: trangthai,
-                boarded_at: new Date(),   // đánh dấu đã bấm — dùng để FE ẩn nút khi reload
-            },
-            { new: true }
-        ).lean();
+        /* ══════════════════════════════════════════════════════
+           CASE 1: Xuống xe
+           FE gửi: { is_boarded: true, is_alighted: true }
+           Điều kiện: phải đang is_boarded = true
+        ══════════════════════════════════════════════════════ */
+        if (is_boarded === true && typeof is_alighted === "boolean") {
+            if (!order.is_boarded) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Hành khách chưa lên xe, không thể cập nhật xuống xe",
+                });
+            }
+            update.is_alighted = is_alighted;
+            update.alighted_at = is_alighted ? new Date() : null;
+        }
 
-        return res.status(200).json({
-            success: true,
-            message: is_boarded ? "Xác nhận hành khách đã lên xe" : "Xác nhận hành khách vắng mặt",
-            data: {
-                _id: updated._id,
-                is_boarded: updated.is_boarded,
-                boarded_at: updated.boarded_at,
-            },
-        });
+        /* ══════════════════════════════════════════════════════
+           CASE 2: Lên xe
+           FE gửi: { is_boarded: true }
+        ══════════════════════════════════════════════════════ */
+        else if (is_boarded === true) {
+            update.is_boarded = true;
+            update.boarded_at = new Date();
+            // Reset xuống xe nếu trước đó đã xuống (hoàn tác)
+            update.is_alighted = false;
+            update.alighted_at = null;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           CASE 3: Vắng mặt / Hoàn tác lên xe
+           FE gửi: { is_boarded: false }
+        ══════════════════════════════════════════════════════ */
+        else if (is_boarded === false) {
+            update.is_boarded = false;
+            update.boarded_at = null;
+            update.is_alighted = false;
+            update.alighted_at = null;
+        }
+
+        const updated = await BookingOrder.findByIdAndUpdate(orderId, update, { new: true })
+            .select("_id is_boarded boarded_at is_alighted alighted_at order_status");
+
+        console.log(`[updateBoarded] Order ${orderId}:`, update);
+        return res.status(200).json({ success: true, data: updated });
+
     } catch (err) {
         console.error("[updateBoarded]", err);
-        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+        return res.status(500).json({ success: false, message: "Lỗi server" });
     }
-}
+};

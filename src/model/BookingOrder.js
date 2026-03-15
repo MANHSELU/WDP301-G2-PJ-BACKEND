@@ -64,6 +64,24 @@ const BookingOrderSchema = new mongoose.Schema(
             required: true,
             min: 0,
         },
+        // ── Trạng thái lên/xuống xe (phụ xe cập nhật) ──────────────────────
+        is_boarded: {
+            type: Boolean,
+            default: false,     // false = chưa lên / vắng mặt
+        },
+        boarded_at: {
+            type: Date,
+            default: null,      // thời điểm lên xe
+        },
+        // ── Trạng thái xuống xe ─────────────────────────────────────────────
+        is_alighted: {
+            type: Boolean,
+            default: false,     // false = chưa xuống
+        },
+        alighted_at: {
+            type: Date,
+            default: null,      // thời điểm xuống xe
+        },
     },
     {
         timestamps: { createdAt: "created_at", updatedAt: false },

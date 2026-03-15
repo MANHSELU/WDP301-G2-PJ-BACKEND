@@ -1728,7 +1728,7 @@ module.exports.getBookedSeats = async (req, res) => {
     // ── Lấy tất cả booking chưa huỷ của trip ────────────────────────────────
     const orders = await BookingOrder.find({
       trip_id,
-      order_status: { $ne: "CANCELLED" },
+      order_status: { $ne: "CANCELLED", $ne: "CREATED" },
     }).select("seat_labels start_id end_id").lean();
 
     // ── Lọc booking nào OVERLAP với đoạn của khách ───────────────────────────
@@ -1784,7 +1784,7 @@ module.exports.getOrderHistory = async (req, res) => {
     const total = await BookingOrder.countDocuments({ user_id });
     const totalPages = Math.ceil(total / limit);
 
-    const orders = await BookingOrder.find({ user_id })
+    const orders = await BookingOrder.find({ user_id, order_status: "PAID" })
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit)
