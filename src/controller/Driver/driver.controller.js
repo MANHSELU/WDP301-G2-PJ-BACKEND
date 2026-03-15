@@ -116,88 +116,47 @@ module.exports.trips = async (req, res) => {
         const userId = res.locals.user.id
         console.log("usersId là : ", userId)
         const trips = await trip.find({
-            $or: [{
-                "drivers.driver_id": userId
-            }
-            ]
+            $or: [{ "drivers.driver_id": userId }]
         })
             .populate("drivers.driver_id", "-face_embedding -password -role")
-            .populate({
-                path: "bus_id",
-                populate: {
-                    path: "bus_type_id"
-                }
-            }
-            )
-            .populate({
-                path: "route_id",
-                populate: [
-                    {
-                        path: "start_id"
-                    },
-                    {
-                        path: "stop_id"
-                    }
-                ]
-            })
+            .populate({ path: "bus_id", populate: { path: "bus_type_id" } })
+            .populate({ path: "route_id", populate: [{ path: "start_id" }, { path: "stop_id" }] })
             .populate("assistant_id", "-face_embedding -password -role")
-        res.status(200).json({
-            message: "successfully",
-            data: trips
-        })
+        res.status(200).json({ message: "successfully", data: trips })
     } catch (err) {
         console.log("lỗi trong chương trình là : ", err)
-        res.status(500).json({
-            message: "Server error",
-        })
+        res.status(500).json({ message: "Server error" })
     }
 }
 module.exports.updateStrip = async (req, res) => {
     try {
         const { id } = req.body;
+        const userId = res.locals.user.id;
 
-        const updatedTrip = await trip.findByIdAndUpdate(
-            id,
-            { status: "RUNNING" },
-            { new: true }
-        ) // trả về bản ghi sau khi update như kiểu là console.log ra thì trả về mới 
-            .populate("drivers.driver_id", "-face_embedding -password -role")
-            .populate({
-                path: "bus_id",
-                populate: {
-                    path: "bus_type_id"
+        const updatedTrip = await trip.findOneAndUpdate(
+            { _id: id, "drivers.driver_id": userId },
+            {
+                status: "RUNNING",
+                $set: {
+                    "drivers.$.status": "RUNNING",
+                    "drivers.$.actual_shift_start": new Date(),
                 }
-            }
-            )
-            .populate({
-                path: "route_id",
-                populate: [
-                    {
-                        path: "start_id"
-                    },
-                    {
-                        path: "stop_id"
-                    }
-                ]
-            })
+            },
+            { new: true }
+        )
+            .populate("drivers.driver_id", "-face_embedding -password -role")
+            .populate({ path: "bus_id", populate: { path: "bus_type_id" } })
+            .populate({ path: "route_id", populate: [{ path: "start_id" }, { path: "stop_id" }] })
             .populate("assistant_id", "-face_embedding -password -role")
 
         if (!updatedTrip) {
-            return res.status(404).json({
-                message: "Trip not found"
-            });
+            return res.status(404).json({ message: "Trip not found" });
         }
 
-        return res.status(200).json({
-            message: "Update status successfully",
-            data: updatedTrip
-        });
-
+        return res.status(200).json({ message: "Update status successfully", data: updatedTrip });
     } catch (err) {
         console.log("Lỗi:", err);
-        return res.status(500).json({
-            message: "Server error"
-        });
+        return res.status(500).json({ message: "Server error" });
     }
 }
 module.exports.tripDetail = async (req, res) => {
@@ -206,64 +165,37 @@ module.exports.tripDetail = async (req, res) => {
         const userId = res.locals.user.id
         const trips = await trip.findOne({
             _id: id,
-            $or: [{
-                "drivers.driver_id": userId
-            }
-            ]
+            $or: [{ "drivers.driver_id": userId }]
         })
             .populate("drivers.driver_id", "-face_embedding -password -role")
-            .populate({
-                path: "bus_id",
-                populate: {
-                    path: "bus_type_id"
-                }
-            }
-            )
-            .populate({
-                path: "route_id",
-                populate: [
-                    {
-                        path: "start_id"
-                    },
-                    {
-                        path: "stop_id"
-                    }
-                ]
-            })
+            .populate({ path: "bus_id", populate: { path: "bus_type_id" } })
+            .populate({ path: "route_id", populate: [{ path: "start_id" }, { path: "stop_id" }] })
             .populate("assistant_id", "-face_embedding -password -role")
+
         if (!trips) {
-            return res.status(404).json({
-                message: "Trip not found"
-            });
+            return res.status(404).json({ message: "Trip not found" });
         }
-        // router stop node con là 
-        const router_stops = await router_stop.find({
-            route_id: trips.route_id
-        }).populate("stop_id")
+
+        const router_stops = await router_stop.find({ route_id: trips.route_id })
+            .populate("stop_id")
             .sort({ order: 1 });
+
         const tripObj = trips.toObject();
         console.log("router stops node là : ", router_stops)
-        return res.status(200).json({
-            message: "OK",
-            data: { ...tripObj, router_stops }
-        });
+        return res.status(200).json({ message: "OK", data: { ...tripObj, router_stops } });
     } catch (err) {
         console.log("lỗi trong chương trình trên là : ", err)
-        return res.status(500).json({
-            message: "Server error"
-        });
+        return res.status(500).json({ message: "Server error" });
     }
 }
 // Format YYYY-MM-DD
 function formatDate(date) {
     if (!date) return null;
-    return new Date(date).toISOString().split("T")[0];
+    return new Date(date).toLocaleDateString("vi-VN");
 }
 
-// Format HH:mm
 function formatTime(date) {
     if (!date) return null;
-
     return new Date(date).toLocaleTimeString("vi-VN", {
         hour: "2-digit",
         minute: "2-digit",
@@ -271,195 +203,150 @@ function formatTime(date) {
     });
 }
 
-// Format YYYY-MM-DD HH:mm
-function formatDateTime(date) {
-    if (!date) return null;
-
-    return new Date(date).toLocaleString("vi-VN", {
-        hour12: false,
-    });
-}
-
-// Tính duration giữa 2 thời gian
 function formatDuration(start, end) {
     if (!start || !end) return "N/A";
-
     const diff = new Date(end) - new Date(start);
-
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
+    if (minutes === 0) return `${hours}h`;
     return `${hours}h ${minutes}m`;
 }
 
 module.exports.getAllTripsForDrivers = async (req, res) => {
-    console.log("chạy vào lấy slot ca lái")
+    console.log("chạy vào lấy slot ca lái");
     try {
         const driverId = res.locals.user.id;
-        const { status, limit = 10, page = 1 } = req.query;
+        const { status, limit = 5, page = 1 } = req.query;
 
-        // Validate driverId
         if (!driverId) {
-            return res.status(400).json({
-                success: false,
-                message: "Driver ID is required",
-            });
+            return res.status(400).json({ success: false, message: "Driver ID is required" });
         }
 
         // Build filter
-        let filter = {
+        const filter = {
             "drivers.driver_id": driverId,
             status: { $ne: "CANCELLED" },
         };
-
-        // Optional: Filter by shift status
         if (status && ["PENDING", "RUNNING", "DONE"].includes(status)) {
             filter["drivers.status"] = status;
         }
 
-        // Calculate pagination
         const skip = (parseInt(page) - 1) * parseInt(limit);
+        const total = await trip.countDocuments(filter);
+        const totalPages = Math.ceil(total / parseInt(limit));
 
-        // Query trips with driver shifts
         const trips = await trip.find(filter)
             .populate({
                 path: "route_id",
-                select: "departure_location arrival_location distance",
+                select: "start_id stop_id distance_km estimated_duration",
+                populate: [
+                    { path: "start_id", select: "name province" },
+                    { path: "stop_id", select: "name province" },
+                ],
             })
             .populate({
                 path: "bus_id",
                 select: "license_plate bus_type_id",
-                populate: {
-                    path: "bus_type_id",
-                    select: "name seats_count",
-                },
+                populate: { path: "bus_type_id", select: "name seats_count" },
             })
-            .populate({
-                path: "drivers.driver_id",
-                select: "name phone",
-            })
-            .sort({ "drivers.shift_start": -1 }) // Sort newest to oldest
+            .populate({ path: "drivers.driver_id", select: "name phone" })
+            .sort({ departure_time: -1 })
             .skip(skip)
             .limit(parseInt(limit));
 
-        // Get total count for pagination
-        const total = await trip.countDocuments(filter);
-        const totalPages = Math.ceil(total / parseInt(limit));
-
-        // Transform data for frontend
-        const shiftsData = trips.flatMap((trip) => {
-            // Find driver's shifts in this trip
-            const driverShifts = trip.drivers.filter(
-                (d) => d.driver_id._id.toString() === driverId
+        const data = trips.flatMap((t) => {
+            const driverShifts = t.drivers.filter(
+                (d) => d.driver_id?._id?.toString() === driverId
             );
 
-            return driverShifts.map((shift) => ({
-                id: trip._id,
-                tripId: trip._id,
-                date: formatDate(trip.departure_time),
-                departureTime: formatTime(trip.departure_time),
-                arrivalTime: formatTime(trip.arrival_time),
-                from: trip.route_id?.departure_location || "N/A",
-                to: trip.route_id?.arrival_location || "N/A",
-                distance: trip.route_id?.distance || "N/A",
-                vehicle: trip.bus_id?.bus_type_id?.name || "N/A",
-                vehicleType: trip.bus_id?.bus_type_id?.name,
-                licensePlate: trip.bus_id?.license_plate || "N/A",
-                totalSeats: trip.bus_id?.bus_type_id?.seats_count || 0,
-                bookedSeats: trip.drivers.length, // Simplified
-                route: trip.route_id,
-                bus: trip.bus_id,
-                // Driver shift info
-                shiftStart: shift.shift_start,
-                shiftEnd: shift.shift_end,
-                shiftStartTime: formatDateTime(shift.shift_start),
-                shiftEndTime: formatDateTime(shift.shift_end),
-                actualShiftStart: shift.actual_shift_start,
-                actualShiftEnd: shift.actual_shift_end,
-                actualShiftStartTime: shift.actual_shift_start
-                    ? formatDateTime(shift.actual_shift_start)
-                    : null,
-                actualShiftEndTime: shift.actual_shift_end
-                    ? formatDateTime(shift.actual_shift_end)
-                    : null,
-                shiftStatus: shift.status, // PENDING, RUNNING, DONE
-                tripStatus: trip.status, // SCHEDULED, RUNNING, FINISHED, CANCELLED
-                duration: formatDuration(shift.shift_start, shift.shift_end),
-                createdAt: trip.created_at,
-                // Formatted for display
-                displayTime: `${formatTime(trip.departure_time)} - ${formatTime(trip.arrival_time)}`,
-                displayRoute: `${trip.route_id?.departure_location || "N/A"} → ${trip.route_id?.arrival_location || "N/A"}`,
-            }));
+            return driverShifts.map((shift) => {
+                // ✅ Dùng đúng field từ schema Route
+                const fromName = t.route_id?.start_id?.name || "N/A";
+                const toName = t.route_id?.stop_id?.name || "N/A";
+                const distance = t.route_id?.distance_km
+                    ? `${t.route_id.distance_km} km`
+                    : "N/A";
+
+                return {
+                    id: shift._id?.toString() || t._id.toString(),
+                    tripId: t._id.toString(),
+
+                    // Thời gian chuyến — dùng departure_time & arrival_time của trip
+                    date: formatDate(t.departure_time),
+                    departureTime: formatTime(t.departure_time),
+                    arrivalTime: formatTime(t.arrival_time),
+                    duration: formatDuration(t.departure_time, t.arrival_time),
+
+                    // Tuyến đường — đúng field
+                    from: fromName,
+                    to: toName,
+                    distance,
+                    displayRoute: `${fromName} → ${toName}`,
+                    displayTime: `${formatTime(t.departure_time)} - ${formatTime(t.arrival_time)}`,
+
+                    // Xe
+                    vehicle: t.bus_id?.bus_type_id?.name || "N/A",
+                    vehicleType: t.bus_id?.bus_type_id?.name || "N/A",
+                    licensePlate: t.bus_id?.license_plate || "N/A",
+                    totalSeats: t.bus_id?.bus_type_id?.seats_count || 0,
+                    bookedSeats: 0,
+
+                    // Ca lái của tài xế này
+                    shiftStart: shift.shift_start || null,
+                    shiftEnd: shift.shift_end || null,
+                    shiftStartTime: formatTime(shift.shift_start) || "N/A",
+                    shiftEndTime: formatTime(shift.shift_end) || "N/A",
+
+                    // Thực tế
+                    actualShiftStart: shift.actual_shift_start || null,
+                    actualShiftEnd: shift.actual_shift_end || null,
+                    actualShiftStartTime: shift.actual_shift_start
+                        ? formatTime(shift.actual_shift_start)
+                        : null,
+                    actualShiftEndTime: shift.actual_shift_end
+                        ? formatTime(shift.actual_shift_end)
+                        : null,
+
+                    // Status
+                    shiftStatus: shift.status || "PENDING",
+                    tripStatus: t.status,
+                    createdAt: t.created_at,
+                };
+            });
         });
 
-        // Sort by shift_start (newest first) - already done in query
-        // shiftsData.sort((a, b) => new Date(b.shiftStart) - new Date(a.shiftStart));
-
-        // Apply pagination on flattened data
-        const paginatedData = shiftsData.slice(skip, skip + parseInt(limit));
-
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            data: paginatedData,
-            total: shiftsData.length,
-            totalPages: Math.ceil(shiftsData.length / parseInt(limit)),
-            currentPage: parseInt(page),
+            data,
+            total,
+            page: parseInt(page),
+            totalPages,
         });
     } catch (error) {
-        console.error("Error in getDriverShifts:", error);
-        res.status(500).json({
+        console.error("Error in getAllTripsForDrivers:", error);
+        return res.status(500).json({
             success: false,
             message: "Failed to fetch driver shifts",
             error: error.message,
         });
     }
-}
-exports.getDriverStats = async (req, res) => {
-    console.log("🚀 getDriverStats called");
+};
 
+module.exports.getDriverStats = async (req, res) => {
     try {
-        // ✅ Get driver ID from middleware
         const driverId = res.locals.user?.id;
-        console.log("1️⃣ driverId:", driverId);
-
         if (!driverId) {
-            console.log("❌ No driver ID!");
-            return res.status(401).json({
-                success: false,
-                message: "Driver ID not found",
-            });
+            return res.status(401).json({ success: false, message: "Driver ID not found" });
         }
 
-        // ✅ Build filter - get all shifts for this driver (no pagination)
-        const filter = {
+        const trips = await trip.find({
             "drivers.driver_id": driverId,
             status: { $ne: "CANCELLED" },
-        };
-        console.log("2️⃣ Filter:", filter);
+        })
+            .populate({ path: "route_id", select: "distance_km estimated_duration" })
+            .populate({ path: "drivers.driver_id", select: "name phone" });
 
-        // ✅ Query all trips (no pagination for stats)
-        const trips = await trip.find(filter)
-            .populate({
-                path: "route_id",
-                select: "departure_location arrival_location distance",
-            })
-            .populate({
-                path: "bus_id",
-                select: "license_plate bus_type_id",
-                populate: {
-                    path: "bus_type_id",
-                    select: "name seats_count",
-                },
-            })
-            .populate({
-                path: "drivers.driver_id",
-                select: "name phone",
-            });
-
-        console.log("3️⃣ Total trips found:", trips.length);
-
-        // ✅ Calculate stats from trips
-        let stats = {
+        const stats = {
             totalShifts: 0,
             pendingShifts: 0,
             runningShifts: 0,
@@ -468,63 +355,40 @@ exports.getDriverStats = async (req, res) => {
             totalDistance: 0,
         };
 
-        trips.forEach((trip) => {
-            // Find all shifts for this driver in this trip
-            const driverShifts = trip.drivers.filter(
-                (d) => d.driver_id._id.toString() === driverId
+        trips.forEach((t) => {
+            const driverShifts = t.drivers.filter(
+                (d) => d.driver_id?._id?.toString() === driverId
             );
 
             driverShifts.forEach((shift) => {
-                // ✅ Count total shifts
                 stats.totalShifts++;
 
-                // ✅ Count by status
-                if (shift.status === "PENDING") {
-                    stats.pendingShifts++;
-                } else if (shift.status === "RUNNING") {
-                    stats.runningShifts++;
-                } else if (shift.status === "DONE") {
-                    stats.completedShifts++;
-                }
+                if (shift.status === "PENDING") stats.pendingShifts++;
+                else if (shift.status === "RUNNING") stats.runningShifts++;
+                else if (shift.status === "DONE") stats.completedShifts++;
 
-                // ✅ Calculate total hours
+                // Tính giờ từ shift_start / shift_end
                 if (shift.shift_start && shift.shift_end) {
-                    const start = new Date(shift.shift_start).getTime();
-                    const end = new Date(shift.shift_end).getTime();
-                    const hoursForThisShift = (end - start) / (1000 * 60 * 60);
-                    stats.totalHours += hoursForThisShift;
-
-                    console.log(
-                        `  Shift: ${shift.status}, Hours: ${hoursForThisShift.toFixed(2)}`
-                    );
+                    const hours =
+                        (new Date(shift.shift_end) - new Date(shift.shift_start)) /
+                        (1000 * 60 * 60);
+                    stats.totalHours += hours;
                 }
 
-                // ✅ Calculate total distance
-                if (trip.route_id?.distance) {
-                    const distance = parseFloat(trip.route_id.distance);
-                    if (!isNaN(distance)) {
-                        stats.totalDistance += distance;
-                    }
+                // ✅ Đúng field distance_km
+                if (t.route_id?.distance_km) {
+                    stats.totalDistance += parseFloat(t.route_id.distance_km) || 0;
                 }
             });
         });
 
-        // ✅ Round total hours to 2 decimal places
         stats.totalHours = Math.round(stats.totalHours * 100) / 100;
         stats.totalDistance = Math.round(stats.totalDistance * 100) / 100;
 
-        console.log("4️⃣ Stats calculated:", stats);
-
-        // ✅ Return response
-        res.status(200).json({
-            success: true,
-            data: stats,
-        });
-
-        console.log("✅ Response sent successfully");
+        return res.status(200).json({ success: true, data: stats });
     } catch (error) {
-        console.error("❌ Error in getDriverStats:", error);
-        res.status(500).json({
+        console.error("Error in getDriverStats:", error);
+        return res.status(500).json({
             success: false,
             message: "Failed to fetch driver stats",
             error: error.message,
