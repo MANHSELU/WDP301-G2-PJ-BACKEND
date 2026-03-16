@@ -923,6 +923,7 @@ module.exports.endPoint = async (req, res) => {
 module.exports.startPoint = async (req, res) => {
   try {
     const { route_id } = req.body;
+    console.log("router_id là: ", route_id)
     const routerStop = await RouteStop.find({
       route_id: route_id,
       is_pickup: true
@@ -1699,6 +1700,7 @@ module.exports.getBookedSeats = async (req, res) => {
   try {
     // ── start_id, end_id là RouteStop._id của khách đang xem ─────────────────
     const { trip_id, start_id, end_id } = req.body;
+    console.log("trip_id và start_id và end_id là : ", trip_id, start_id, end_id)
 
     if (!trip_id) {
       return res.status(400).json({ message: "Thiếu trip_id" });

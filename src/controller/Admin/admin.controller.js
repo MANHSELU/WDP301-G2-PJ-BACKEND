@@ -1717,7 +1717,7 @@ module.exports.getGeoOfStopLocation = async (req, res) => {
     console.log("2");
     return res.status(200).json({ coordinates });
   } catch (error) {
-        console.error("FULL ERROR:", error);
+    console.error("FULL ERROR:", error);
 
     return res.status(500).json({ message: error.message });
   }
@@ -1762,6 +1762,7 @@ module.exports.getAllRoutes = async (req, res) => {
 };
 // Hàm lấy tất cả xe đã check conflict lịch
 module.exports.getAllBuses = async (req, res) => {
+  console.log("chạy vào allbus")
   try {
     const { shift_start, shift_end, start_stop_id } = req.query;
     if (!shift_start || !shift_end || !start_stop_id) {
