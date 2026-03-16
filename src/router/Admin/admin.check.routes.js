@@ -9,7 +9,7 @@ router.get("/accounts/:id", adminController.getAccountById);
 // router.patch("/accounts/:id", adminController.updateAccount);
 
 // ==================== BUS ROUTES ====================
-router.get("/buses", adminController.getAllBuses);
+router.get("/viewBuses", adminController.viewBuses);
 router.get("/buses/:id", adminController.getBusById);
 router.put("/buses/:id", adminController.updateBus);
 router.patch("/buses/:id/status", adminController.updateBusStatus);
