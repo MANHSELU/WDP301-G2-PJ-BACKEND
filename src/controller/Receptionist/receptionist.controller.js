@@ -283,7 +283,6 @@ module.exports.createBooking = async (req, res) => {
     }
 };
 const Parcel = require("../../model/Parcel");
-const Trip = require("../../model/Trip");
 
 const PARCEL_STATUS = {
     RECEIVED: "RECEIVED",
