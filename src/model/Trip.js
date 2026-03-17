@@ -73,6 +73,12 @@ const TripSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
+    // Sức chứa hàng hóa tối đa (kg). Nếu không set => không kiểm soát trọng lượng
+    max_weight_kg: {
+      type: Number,
+      required: false,
+      default: null,
+    },
     //Khoảng cách dự kiến
     scheduled_distance: {
       type: Number,

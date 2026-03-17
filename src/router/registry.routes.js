@@ -13,6 +13,7 @@ const aiNotCheckV2 = require("./Ai/ai.notcheckV2.routes.js");
 const aiNotCheck = require("./Ai/ai.notcheckroutes.js")
 const payment = require("./../router/payment/payment.routes.js")
 const RECEPTIONISTCheck = require("./../router/Receptionist/receptionist.check.routes.js")
+
 module.exports = [
   {
     prefix: "/api/customer/notcheck",

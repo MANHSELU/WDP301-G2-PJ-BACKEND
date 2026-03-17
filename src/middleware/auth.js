@@ -60,3 +60,16 @@ module.exports.checkRole = (...allowedRoles) => {
         next();
     };
 };
+
+module.exports.checkRoleName = (...allowedRoleNames) => {
+    return (req, res, next) => {
+        const role = res.locals.user.role;
+        const roleName = (role?.name || "").toString().toLowerCase();
+        const allowed = allowedRoleNames.map((r) => r.toString().toLowerCase());
+        console.log("role name là : ", roleName)
+        if (!allowed.includes(roleName)) {
+            return res.status(403).json({ message: "Không có quyền" });
+        }
+        next();
+    };
+};

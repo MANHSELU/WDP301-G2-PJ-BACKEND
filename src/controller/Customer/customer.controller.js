@@ -14,6 +14,7 @@ const mongoose = require("mongoose");
 const BookingOrder = require("./../../model/BookingOrder")
 const BookingPayment = require("./../../model/BookingPayment")
 const Stops = require("./../../model/Stops")
+const Parcel = require("../../model/Parcel")
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -1774,6 +1775,8 @@ module.exports.getBookedSeats = async (req, res) => {
 };
 module.exports.getOrderHistory = async (req, res) => {
   try {
+
+    // user_id lấy từ middleware auth (req.user._id)
     const user_id = res.locals.user.id;
     if (!user_id) {
       return res.status(401).json({ message: "Không xác định được tài khoản" });
@@ -1931,3 +1934,324 @@ module.exports.getRoutesToday = async (req, res) => {
   }
 };
 
+// ----------------------------------------------
+//          Parcel / Delivery Orders
+// ----------------------------------------------
+
+const PARCEL_STATUS = {
+  RECEIVED: "RECEIVED",
+  ON_BUS: "ON_BUS",
+  IN_TRANSIT: "IN_TRANSIT",
+  DELIVERED: "DELIVERED",
+  CANCELLED: "CANCELLED",
+};
+
+const APPROVAL_STATUS = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+};
+
+async function getUsedWeight(trip_id) {
+  const parcels = await Parcel.find({
+    trip_id,
+    approval_status: APPROVAL_STATUS.APPROVED,
+    status: { $nin: [PARCEL_STATUS.CANCELLED, PARCEL_STATUS.DELIVERED] },
+  }).select("weight_kg");
+
+  return parcels.reduce((sum, p) => sum + (p.weight_kg || 0), 0);
+}
+
+function generateParcelCode() {
+  return `P${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+module.exports.createParcel = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const {
+      trip_id,
+      receiver_name,
+      receiver_phone,
+      start_id,
+      end_id,
+      pickup_location_id,
+      dropoff_location_id,
+      weight_kg,
+      parcel_type,
+      total_price,
+      payment_method = "CASH_ON_BOARD",
+    } = req.body;
+
+    const sender_id = res.locals.user.id;
+
+    if (!trip_id || !receiver_name?.trim() || !receiver_phone?.trim() || !start_id || !end_id) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
+    }
+
+    const weight = Number(weight_kg);
+    if (!weight || weight <= 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Khối lượng không hợp lệ" });
+    }
+
+    const price = Number(total_price);
+    if (isNaN(price) || price < 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Giá không hợp lệ" });
+    }
+
+    if (!["ONLINE", "CASH_ON_BOARD"].includes(payment_method)) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Phương thức thanh toán không hợp lệ" });
+    }
+
+    const trip = await Trip.findById(trip_id).session(session);
+    if (!trip) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: "Không tìm thấy chuyến" });
+    }
+
+    if (trip.status !== "SCHEDULED") {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "Chuyến không còn nhận hàng" });
+    }
+
+    const maxWeight = trip.max_weight_kg;
+    let isAccepted = true;
+    let remainingWeight = null;
+
+    if (typeof maxWeight === "number" && maxWeight > 0) {
+      const usedWeight = await getUsedWeight(trip_id);
+      remainingWeight = maxWeight - usedWeight;
+      if (weight > remainingWeight) {
+        isAccepted = false;
+      }
+    }
+
+    const code = generateParcelCode();
+
+    const [parcel] = await Parcel.create(
+      [
+        {
+          code,
+          trip_id,
+          sender_id,
+          receiver_name: receiver_name.trim(),
+          receiver_phone: receiver_phone.trim(),
+          start_id,
+          end_id,
+          pickup_location_id: pickup_location_id || null,
+          dropoff_location_id: dropoff_location_id || null,
+          weight_kg: weight,
+          parcel_type: parcel_type?.trim() || null,
+          total_price: price,
+          payment_method,
+          payment_status: isAccepted ? "PENDING" : "REFUNDED",
+          approval_status: isAccepted ? APPROVAL_STATUS.APPROVED : APPROVAL_STATUS.REJECTED,
+          status: isAccepted ? "RECEIVED" : "CANCELLED",
+        },
+      ],
+      { session }
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    const responseMessage = isAccepted
+      ? "Tạo đơn gửi hàng thành công"
+      : "Đơn bị từ chối vì quá khối lượng của chuyến";
+
+    return res.status(201).json({
+      message: responseMessage,
+      data: {
+        parcel: {
+          _id: parcel._id,
+          code: parcel.code,
+          status: parcel.status,
+          approval_status: parcel.approval_status,
+          total_price: parcel.total_price,
+          weight_kg: parcel.weight_kg,
+          created_at: parcel.created_at,
+        },
+        payment: {
+          amount: parcel.total_price,
+          payment_method: parcel.payment_method,
+          payment_status: parcel.payment_status,
+        },
+        paymentPayload: {
+          orderId: parcel._id,
+          amount: parcel.total_price,
+          currency: "VND",
+          description: `Thanh toán đơn gửi hàng ${parcel.code}`,
+        },
+        ...(isAccepted
+          ? {}
+          : { remaining_weight_kg: remainingWeight ?? null }),
+      },
+    });
+  } catch (err) {
+    try {
+      await session.abortTransaction();
+    } catch (_) { }
+    session.endSession();
+    console.error("[createParcel] Error:", err);
+    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+  }
+};
+
+module.exports.getMyParcels = async (req, res) => {
+  try {
+    const user_id = res.locals.user.id;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 10);
+    const skip = (page - 1) * limit;
+
+    const filter = { sender_id: user_id };
+
+    if (req.query.status) {
+      filter.status = req.query.status.toUpperCase();
+    }
+    if (req.query.approval_status) {
+      filter.approval_status = req.query.approval_status.toUpperCase();
+    }
+
+    const total = await Parcel.countDocuments(filter);
+    const totalPages = Math.ceil(total / limit);
+
+    const parcels = await Parcel.find(filter)
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate({
+        path: "trip_id",
+        select: "departure_time arrival_time status route_id",
+        populate: {
+          path: "route_id",
+          select: "start_id stop_id",
+          populate: [
+            { path: "start_id", select: "name province" },
+            { path: "stop_id", select: "name province" },
+          ],
+        },
+      })
+      .populate({
+        path: "start_id",
+        select: "stop_id stop_order",
+      })
+      .populate({
+        path: "end_id",
+        select: "stop_id stop_order",
+      })
+      .populate({
+        path: "pickup_location_id",
+        select: "location_name address latitude longitude",
+      })
+      .populate({
+        path: "dropoff_location_id",
+        select: "location_name address latitude longitude",
+      })
+      .lean();
+
+    return res.status(200).json({
+      message: "Lấy danh sách đơn gửi hàng thành công",
+      data: parcels,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    });
+  } catch (err) {
+    console.error("[getMyParcels] Error:", err);
+    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+  }
+};
+
+module.exports.getParcelDetail = async (req, res) => {
+  try {
+    const user_id = res.locals.user.id;
+    const parcelId = req.params.id;
+
+    const parcel = await Parcel.findOne({ _id: parcelId, sender_id: user_id })
+      .populate({
+        path: "trip_id",
+        select: "departure_time arrival_time status route_id",
+        populate: {
+          path: "route_id",
+          select: "start_id stop_id",
+          populate: [
+            { path: "start_id", select: "name province" },
+            { path: "stop_id", select: "name province" },
+          ],
+        },
+      })
+      .populate({ path: "start_id", select: "stop_id stop_order" })
+      .populate({ path: "end_id", select: "stop_id stop_order" })
+      .populate({
+        path: "pickup_location_id",
+        select: "location_name address latitude longitude",
+      })
+      .populate({
+        path: "dropoff_location_id",
+        select: "location_name address latitude longitude",
+      })
+      .lean();
+
+    if (!parcel) {
+      return res.status(404).json({ message: "Không tìm thấy đơn" });
+    }
+
+    return res.status(200).json({ message: "OK", data: parcel });
+  } catch (err) {
+    console.error("[getParcelDetail] Error:", err);
+    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+  }
+};
+
+module.exports.cancelParcel = async (req, res) => {
+  try {
+    const user_id = res.locals.user.id;
+    const parcelId = req.params.id;
+
+    const parcel = await Parcel.findById(parcelId);
+    if (!parcel) {
+      return res.status(404).json({ message: "Không tìm thấy đơn" });
+    }
+    if (parcel.sender_id.toString() !== user_id.toString()) {
+      return res.status(403).json({ message: "Không có quyền hủy đơn này" });
+    }
+
+    if ([
+      PARCEL_STATUS.ON_BUS,
+      PARCEL_STATUS.IN_TRANSIT,
+      PARCEL_STATUS.DELIVERED,
+      PARCEL_STATUS.CANCELLED,
+    ].includes(parcel.status)) {
+      return res.status(400).json({ message: "Không thể hủy đơn ở trạng thái hiện tại" });
+    }
+
+    parcel.status = PARCEL_STATUS.CANCELLED;
+    if (parcel.payment_status === "PAID") {
+      parcel.payment_status = "REFUNDED";
+    } else if (parcel.payment_status === "PENDING") {
+      parcel.payment_status = "CANCELLED";
+    }
+    await parcel.save();
+
+    return res.status(200).json({ message: "Hủy đơn gửi hàng thành công", data: { parcelId: parcel._id } });
+  } catch (err) {
+    console.error("[cancelParcel] Error:", err);
+    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+  }
+};
