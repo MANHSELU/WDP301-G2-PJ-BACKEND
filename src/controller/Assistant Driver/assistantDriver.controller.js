@@ -2,6 +2,8 @@ const Trip = require("../../model/Trip"); // đổi đúng path model của bạ
 const BookingOrder = require("./../../model/BookingOrder")
 const TripBooking = require("../../model/Booking_Order_detail");
 const Parcel = require("../../model/Parcel");
+const upload = require("../../util/upload");
+const cloudinary = require("../../config/cloudinaryConfig");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(date) {
@@ -409,12 +411,14 @@ module.exports.updateBoarded = async (req, res) => {
 // ─── UC1: Confirm Luggage (Xác nhận hành lý đã lên xe) ──────────────────────────
 // PATCH /api/assistant/check/bookings/:bookingId/confirm-luggage
 // Body: { trip_id: string, note?: string }
+// Files: images (multiple)
 // ─────────────────────────────────────────────────────────────────────────────
 module.exports.confirmLuggage = async (req, res) => {
     try {
         const { bookingId } = req.params;
         const { trip_id, note = '' } = req.body;
         const assistantId = res.locals.user?.id;
+        const files = req.files || [];
 
         if (!bookingId || !trip_id) {
             return res.status(400).json({ success: false, message: "Booking ID and Trip ID are required" });
@@ -432,6 +436,24 @@ module.exports.confirmLuggage = async (req, res) => {
             return res.status(403).json({ success: false, message: "Unauthorized or trip not running" });
         }
 
+        // Upload images to Cloudinary
+        let imageUrls = [];
+        if (files.length > 0) {
+            const uploadPromises = files.map(file => {
+                return new Promise((resolve, reject) => {
+                    const stream = cloudinary.uploader.upload_stream(
+                        { folder: 'luggage', resource_type: 'image' },
+                        (error, result) => {
+                            if (error) reject(error);
+                            else resolve(result.secure_url);
+                        }
+                    );
+                    stream.end(file.buffer);
+                });
+            });
+            imageUrls = await Promise.all(uploadPromises);
+        }
+
         // Update booking and log
         const logEntry = {
             action: 'CONFIRMED',
@@ -440,16 +462,19 @@ module.exports.confirmLuggage = async (req, res) => {
             created_at: new Date()
         };
 
-        const updatedBooking = await TripBooking.findByIdAndUpdate(
-            bookingId,
-            {
-                luggage_confirmed: true,
-                luggage_confirmed_at: new Date(),
-                luggage_confirmed_by: assistantId,
-                $push: { luggage_logs: logEntry }
-            },
-            { new: true }
-        );
+        const updateData = {
+            luggage_confirmed: true,
+            luggage_confirmed_at: new Date(),
+            luggage_confirmed_by: assistantId,
+            $push: { luggage_logs: logEntry }
+        };
+
+        if (imageUrls.length > 0) {
+            updateData.$push = updateData.$push || {};
+            updateData.$push.luggage_images = { $each: imageUrls };
+        }
+
+        const updatedBooking = await TripBooking.findByIdAndUpdate(bookingId, updateData, { new: true });
 
         return res.status(200).json({
             success: true,
@@ -520,5 +545,47 @@ module.exports.updateParcelStatus = async (req, res) => {
     } catch (error) {
         console.error("Error in updateParcelStatus:", error);
         return res.status(500).json({ success: false, message: "Failed to update parcel status", error: error.message });
+    }
+};
+
+// ─── Get Trip Detail with Parcels ─────────────────────────────────────────────
+// GET /api/assistant/check/trips/:tripId
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports.getAssistantTripDetail = async (req, res) => {
+    try {
+        const { tripId } = req.params;
+        const assistantId = res.locals.user?.id;
+
+        if (!assistantId) {
+            return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+        }
+
+        // Validate trip belongs to assistant
+        const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId });
+        if (!trip) {
+            return res.status(403).json({ success: false, message: "Không có quyền truy cập chuyến này" });
+        }
+
+        // Get passengers
+        const passengers = await TripBooking.find({ trip_id: tripId })
+            .populate('order_id', 'order_status')
+            .sort({ created_at: -1 });
+
+        // Get parcels
+        const parcels = await Parcel.find({ trip_id: tripId })
+            .populate('sender_id', 'name phone')
+            .sort({ created_at: -1 });
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                trip,
+                passengers,
+                parcels
+            }
+        });
+    } catch (error) {
+        console.error("Error in getAssistantTripDetail:", error);
+        return res.status(500).json({ success: false, message: "Failed to fetch trip detail", error: error.message });
     }
 };

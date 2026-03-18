@@ -89,6 +89,10 @@ const TripBookingSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
         },
+        luggage_images: [{
+            type: String, // Cloudinary URL
+            trim: true,
+        }],
         luggage_logs: [{
             action: {
                 type: String,
