@@ -14,7 +14,6 @@ const ParcelSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Trip",
             required: true, // hàng đi theo chuyến nào
-            index: true,
         },
 
         sender_id: {
@@ -108,6 +107,32 @@ const ParcelSchema = new mongoose.Schema(
             ],
             default: "RECEIVED",
         },
+        status_logs: [{
+            status: {
+                type: String,
+                enum: [
+                    "RECEIVED",
+                    "ON_BUS",
+                    "IN_TRANSIT",
+                    "DELIVERED",
+                    "CANCELLED",
+                ],
+                required: true,
+            },
+            note: {
+                type: String,
+                trim: true,
+            },
+            updated_by: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                required: true,
+            },
+            created_at: {
+                type: Date,
+                default: Date.now,
+            },
+        }],
     },
     {
         timestamps: { createdAt: "created_at", updatedAt: false },

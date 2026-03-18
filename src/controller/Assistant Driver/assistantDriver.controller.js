@@ -1,5 +1,7 @@
 const Trip = require("../../model/Trip"); // đổi đúng path model của bạn
 const BookingOrder = require("./../../model/BookingOrder")
+const TripBooking = require("../../model/Booking_Order_detail");
+const Parcel = require("../../model/Parcel");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(date) {
@@ -401,5 +403,122 @@ module.exports.updateBoarded = async (req, res) => {
     } catch (err) {
         console.error("[updateBoarded]", err);
         return res.status(500).json({ success: false, message: "Lỗi server" });
+    }
+};
+
+// ─── UC1: Confirm Luggage (Xác nhận hành lý đã lên xe) ──────────────────────────
+// PATCH /api/assistant/check/bookings/:bookingId/confirm-luggage
+// Body: { trip_id: string, note?: string }
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports.confirmLuggage = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const { trip_id, note = '' } = req.body;
+        const assistantId = res.locals.user?.id;
+
+        if (!bookingId || !trip_id) {
+            return res.status(400).json({ success: false, message: "Booking ID and Trip ID are required" });
+        }
+
+        // Validate booking exists and belongs to trip
+        const booking = await TripBooking.findOne({ _id: bookingId, trip_id });
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "Booking not found for this trip" });
+        }
+
+        // Validate trip is RUNNING and assistant is assigned
+        const trip = await Trip.findById(trip_id);
+        if (!trip || trip.status !== 'RUNNING' || trip.assistant_id.toString() !== assistantId) {
+            return res.status(403).json({ success: false, message: "Unauthorized or trip not running" });
+        }
+
+        // Update booking and log
+        const logEntry = {
+            action: 'CONFIRMED',
+            confirmed_by: assistantId,
+            note,
+            created_at: new Date()
+        };
+
+        const updatedBooking = await TripBooking.findByIdAndUpdate(
+            bookingId,
+            {
+                luggage_confirmed: true,
+                luggage_confirmed_at: new Date(),
+                luggage_confirmed_by: assistantId,
+                $push: { luggage_logs: logEntry }
+            },
+            { new: true }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Luggage confirmed successfully",
+            data: updatedBooking
+        });
+    } catch (error) {
+        console.error("Error in confirmLuggage:", error);
+        return res.status(500).json({ success: false, message: "Failed to confirm luggage", error: error.message });
+    }
+};
+
+// ─── UC2: Update Parcel Status ────────────────────────────────────────────────
+// PATCH /api/assistant/check/parcels/:parcelId/update-status
+// Body: { new_status: 'ON_BUS'|'IN_TRANSIT'|'DELIVERED', note?: string }
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports.updateParcelStatus = async (req, res) => {
+    try {
+        const { parcelId } = req.params;
+        const { new_status, note = '' } = req.body;
+        const assistantId = res.locals.user?.id;
+
+        const validStatuses = ['ON_BUS', 'IN_TRANSIT', 'DELIVERED'];
+        if (!validStatuses.includes(new_status)) {
+            return res.status(400).json({ success: false, message: "Invalid status. Must be ON_BUS, IN_TRANSIT, or DELIVERED" });
+        }
+
+        // Find parcel
+        const parcel = await Parcel.findById(parcelId);
+        if (!parcel) {
+            return res.status(404).json({ success: false, message: "Parcel not found" });
+        }
+
+        // Validate trip is RUNNING or FINISHED and assistant is assigned
+        const trip = await Trip.findById(parcel.trip_id);
+        if (!trip || !['RUNNING', 'FINISHED'].includes(trip.status) || trip.assistant_id.toString() !== assistantId) {
+            return res.status(403).json({ success: false, message: "Unauthorized or invalid trip status" });
+        }
+
+        // Prevent backward status changes
+        const statusOrder = { 'RECEIVED': 1, 'ON_BUS': 2, 'IN_TRANSIT': 3, 'DELIVERED': 4 };
+        if (statusOrder[new_status] <= statusOrder[parcel.status]) {
+            return res.status(400).json({ success: false, message: "Cannot revert to previous status" });
+        }
+
+        // Update parcel and log status change
+        const logEntry = {
+            status: new_status,
+            note,
+            updated_by: assistantId,
+            created_at: new Date()
+        };
+
+        const updatedParcel = await Parcel.findByIdAndUpdate(
+            parcelId,
+            {
+                status: new_status,
+                $push: { status_logs: logEntry }
+            },
+            { new: true }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Parcel status updated successfully",
+            data: updatedParcel
+        });
+    } catch (error) {
+        console.error("Error in updateParcelStatus:", error);
+        return res.status(500).json({ success: false, message: "Failed to update parcel status", error: error.message });
     }
 };
