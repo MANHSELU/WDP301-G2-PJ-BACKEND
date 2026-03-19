@@ -1934,6 +1934,7 @@ module.exports.getRoutesToday = async (req, res) => {
   }
 };
 
+////////////////////////////////
 // ----------------------------------------------
 //          Parcel / Delivery Orders
 // ----------------------------------------------
@@ -1966,6 +1967,241 @@ function generateParcelCode() {
   return `P${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
+// module.exports.createParcel = async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     const {
+//       trip_id,
+//       receiver_name,
+//       receiver_phone,
+//       start_id,
+//       end_id,
+//       pickup_location_id,
+//       dropoff_location_id,
+//       weight_kg,
+//       parcel_type,
+//       total_price,
+//       payment_method = "CASH_ON_BOARD",
+//     } = req.body;
+
+//     const sender_id = res.locals.user.id;
+
+//     if (!trip_id || !receiver_name?.trim() || !receiver_phone?.trim() || !start_id || !end_id) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
+//     }
+
+//     const weight = Number(weight_kg);
+//     if (!weight || weight <= 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Khối lượng không hợp lệ" });
+//     }
+
+//     const price = Number(total_price);
+//     if (isNaN(price) || price < 0) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Giá không hợp lệ" });
+//     }
+
+//     if (!["ONLINE", "CASH_ON_BOARD"].includes(payment_method)) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Phương thức thanh toán không hợp lệ" });
+//     }
+
+//     const trip = await Trip.findById(trip_id).session(session);
+//     if (!trip) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(404).json({ message: "Không tìm thấy chuyến" });
+//     }
+
+//     if (trip.status !== "SCHEDULED") {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({ message: "Chuyến không còn nhận hàng" });
+//     }
+
+//     const maxWeight = trip.max_weight_kg;
+//     let isAccepted = true;
+//     let remainingWeight = null;
+
+//     if (typeof maxWeight === "number" && maxWeight > 0) {
+//       const usedWeight = await getUsedWeight(trip_id);
+//       remainingWeight = maxWeight - usedWeight;
+//       if (weight > remainingWeight) {
+//         isAccepted = false;
+//       }
+//     }
+
+//     const code = generateParcelCode();
+
+//     const [parcel] = await Parcel.create(
+//       [
+//         {
+//           code,
+//           trip_id,
+//           sender_id,
+//           receiver_name: receiver_name.trim(),
+//           receiver_phone: receiver_phone.trim(),
+//           start_id,
+//           end_id,
+//           pickup_location_id: pickup_location_id || null,
+//           dropoff_location_id: dropoff_location_id || null,
+//           weight_kg: weight,
+//           parcel_type: parcel_type?.trim() || null,
+//           total_price: price,
+//           payment_method,
+//           payment_status: isAccepted ? "PENDING" : "REFUNDED",
+//           approval_status: isAccepted ? APPROVAL_STATUS.APPROVED : APPROVAL_STATUS.REJECTED,
+//           status: isAccepted ? "RECEIVED" : "CANCELLED",
+//         },
+//       ],
+//       { session }
+//     );
+
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     const responseMessage = isAccepted
+//       ? "Tạo đơn gửi hàng thành công"
+//       : "Đơn bị từ chối vì quá khối lượng của chuyến";
+
+//     return res.status(201).json({
+//       message: responseMessage,
+//       data: {
+//         parcel: {
+//           _id: parcel._id,
+//           code: parcel.code,
+//           status: parcel.status,
+//           approval_status: parcel.approval_status,
+//           total_price: parcel.total_price,
+//           weight_kg: parcel.weight_kg,
+//           created_at: parcel.created_at,
+//         },
+//         payment: {
+//           amount: parcel.total_price,
+//           payment_method: parcel.payment_method,
+//           payment_status: parcel.payment_status,
+//         },
+//         paymentPayload: {
+//           orderId: parcel._id,
+//           amount: parcel.total_price,
+//           currency: "VND",
+//           description: `Thanh toán đơn gửi hàng ${parcel.code}`,
+//         },
+//         ...(isAccepted
+//           ? {}
+//           : { remaining_weight_kg: remainingWeight ?? null }),
+//       },
+//     });
+//   } catch (err) {
+//     try {
+//       await session.abortTransaction();
+//     } catch (_) { }
+//     session.endSession();
+//     console.error("[createParcel] Error:", err);
+//     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+//   }
+// };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRICING CONFIG  (tách ra file config/parcel.pricing.js nếu muốn)
+// ─────────────────────────────────────────────────────────────────────────────
+const PRICING = {
+  PRICE_PER_KG: 20_000,
+  VOLUMETRIC_DIVISOR: 5_000,
+  DOCUMENT_PRICE_PER_KG: 15_000,
+  BICYCLE: { SMALL: 100_000, MEDIUM: 150_000, LARGE: 200_000 },
+  MOTORCYCLE: { SMALL: 250_000, MEDIUM: 350_000, LARGE: 500_000 },
+};
+/**
+ * Khối lượng ước tính (kg) cho xe đạp / xe máy.
+ * BE tự gán — không cần FE gửi lên.
+ */
+const VEHICLE_ESTIMATED_WEIGHT = {
+  BICYCLE: { SMALL: 12, MEDIUM: 18, LARGE: 24 },
+  MOTORCYCLE: { SMALL: 85, MEDIUM: 120, LARGE: 165 },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER – tính giá & trọng lượng quy đổi
+// ─────────────────────────────────────────────────────────────────────────────
+function calcVolumetric(dims) {
+  if (!dims) return { volume_m3: null, volumetric_weight_kg: null };
+  const { length_cm, width_cm, height_cm } = dims;
+  if (!length_cm || !width_cm || !height_cm)
+    return { volume_m3: null, volumetric_weight_kg: null };
+  const cm3 = length_cm * width_cm * height_cm;
+  return {
+    volume_m3: +(cm3 / 1_000_000).toFixed(4),
+    volumetric_weight_kg: +(cm3 / PRICING.VOLUMETRIC_DIVISOR).toFixed(2),
+  };
+}
+
+function calcPrice({ item_category, size_category, weight_kg, volumetric_weight_kg }) {
+  switch (item_category) {
+    case "MOTORCYCLE":
+      return PRICING.MOTORCYCLE[size_category] ?? PRICING.MOTORCYCLE.MEDIUM;
+    case "BICYCLE":
+      return PRICING.BICYCLE[size_category] ?? PRICING.BICYCLE.MEDIUM;
+    case "DOCUMENT":
+      return Math.max(1, weight_kg) * PRICING.DOCUMENT_PRICE_PER_KG;
+    default: { // PARCEL / OTHER
+      const charged = Math.max(weight_kg, volumetric_weight_kg ?? 0);
+      return Math.max(1, charged) * PRICING.PRICE_PER_KG;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROLLER
+// ─────────────────────────────────────────────────────────────────────────────
+async function getUsedWeight(trip_id) {
+  const result = await Parcel.aggregate([
+    {
+      $match: {
+        trip_id: new mongoose.Types.ObjectId(trip_id),
+        status: { $nin: ["CANCELLED"] },
+      },
+    },
+    {
+      $project: {
+        charged: {
+          $max: ["$weight_kg", { $ifNull: ["$volumetric_weight_kg", 0] }],
+        },
+      },
+    },
+    { $group: { _id: null, total: { $sum: "$charged" } } },
+  ]);
+  return result[0]?.total ?? 0;
+}
+
+/**
+ * Tổng thể tích (m³) đã đặt trên chuyến (không tính đơn CANCELLED).
+ */
+async function getUsedVolume(trip_id) {
+  const result = await Parcel.aggregate([
+    {
+      $match: {
+        trip_id: new mongoose.Types.ObjectId(trip_id),
+        status: { $nin: ["CANCELLED"] },
+        volume_m3: { $ne: null, $gt: 0 },
+      },
+    },
+    { $group: { _id: null, total: { $sum: "$volume_m3" } } },
+  ]);
+  return result[0]?.total ?? 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROLLER  createParcel
+// ─────────────────────────────────────────────────────────────────────────────
 module.exports.createParcel = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -1981,98 +2217,175 @@ module.exports.createParcel = async (req, res) => {
       dropoff_location_id,
       weight_kg,
       parcel_type,
-      total_price,
       payment_method = "CASH_ON_BOARD",
+      item_category = "PARCEL",
+      size_category = null,
+      dimensions,
     } = req.body;
 
     const sender_id = res.locals.user.id;
 
+    /* 1. Validate cơ bản ─────────────────────────────────────── */
     if (!trip_id || !receiver_name?.trim() || !receiver_phone?.trim() || !start_id || !end_id) {
-      await session.abortTransaction();
-      session.endSession();
+      await session.abortTransaction(); session.endSession();
       return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
     }
 
-    const weight = Number(weight_kg);
-    if (!weight || weight <= 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "Khối lượng không hợp lệ" });
+    const VALID_CATEGORIES = ["DOCUMENT", "PARCEL", "BICYCLE", "MOTORCYCLE", "OTHER"];
+    if (!VALID_CATEGORIES.includes(item_category)) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ message: "Danh mục hàng không hợp lệ" });
     }
 
-    const price = Number(total_price);
-    if (isNaN(price) || price < 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "Giá không hợp lệ" });
+    const NEEDS_SIZE = ["BICYCLE", "MOTORCYCLE", "OTHER"];
+    if (NEEDS_SIZE.includes(item_category) && !["SMALL", "MEDIUM", "LARGE"].includes(size_category)) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ message: `Vui lòng chọn kích thước cho ${item_category}` });
     }
 
     if (!["ONLINE", "CASH_ON_BOARD"].includes(payment_method)) {
-      await session.abortTransaction();
-      session.endSession();
+      await session.abortTransaction(); session.endSession();
       return res.status(400).json({ message: "Phương thức thanh toán không hợp lệ" });
     }
 
-    const trip = await Trip.findById(trip_id).session(session);
-    if (!trip) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(404).json({ message: "Không tìm thấy chuyến" });
-    }
-
-    if (trip.status !== "SCHEDULED") {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "Chuyến không còn nhận hàng" });
-    }
-
-    const maxWeight = trip.max_weight_kg;
-    let isAccepted = true;
-    let remainingWeight = null;
-
-    if (typeof maxWeight === "number" && maxWeight > 0) {
-      const usedWeight = await getUsedWeight(trip_id);
-      remainingWeight = maxWeight - usedWeight;
-      if (weight > remainingWeight) {
-        isAccepted = false;
+    /* 2. Xác định weight_kg ─────────────────────────────────── */
+    let resolvedWeight;
+    if (item_category === "BICYCLE" || item_category === "MOTORCYCLE") {
+      resolvedWeight = VEHICLE_ESTIMATED_WEIGHT[item_category][size_category];
+    } else {
+      resolvedWeight = Number(weight_kg);
+      if (!resolvedWeight || resolvedWeight <= 0) {
+        await session.abortTransaction(); session.endSession();
+        return res.status(400).json({ message: "Khối lượng không hợp lệ" });
       }
     }
 
+    /* 3. Tính thể tích & KL quy đổi ─────────────────────────── */
+    const { volume_m3, volumetric_weight_kg } = calcVolumetric(dimensions);
+
+    /* 4. Tính giá ───────────────────────────────────────────── */
+    const total_price = calcPrice({
+      item_category, size_category,
+      weight_kg: resolvedWeight, volumetric_weight_kg,
+    });
+
+    /* 5. Lấy chuyến ─────────────────────────────────────────── */
+    const trip = await Trip.findById(trip_id).session(session);
+    if (!trip) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(404).json({ message: "Không tìm thấy chuyến" });
+    }
+    if (trip.status !== "SCHEDULED") {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({ message: "Chuyến không còn nhận hàng" });
+    }
+
+    /* 6. Kiểm tra sức chứa ──────────────────────────────────────
+     *
+     *  null / undefined  →  chuyến CHƯA cấu hình  →  trả lỗi ngay (không bỏ qua)
+     *  0                 →  xe không chở hàng      →  từ chối đơn
+     *  > 0               →  kiểm tra bình thường
+     *
+     * ─────────────────────────────────────────────────────────── */
+    const chargedWeight = Math.max(resolvedWeight, volumetric_weight_kg ?? 0);
+
+    // 6a. max_weight_kg null → báo lỗi luôn, không nhận
+    if (trip.max_weight_kg === null || trip.max_weight_kg === undefined) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({
+        message: "Xe đã đủ hàng, hiện không nhận thêm",
+      });
+    }
+
+    // 6b. max_volume_m3 null → báo lỗi luôn, không nhận
+    if (trip.max_volume_m3 === null || trip.max_volume_m3 === undefined) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(400).json({
+        message: "Xe đã đủ hàng, hiện không nhận thêm",
+      });
+    }
+
+    let isAccepted = true;
+    let remainingWeight = null;
+    let remainingVolume = null;
+    let rejectReason = null;
+
+    // 6c. Kiểm tra kg ─────────────────────────────────────────────
+    if (trip.max_weight_kg === 0) {
+      isAccepted = false;
+      rejectReason = "Chuyến này không hỗ trợ gửi hàng";
+    } else {
+      const usedWeight = await getUsedWeight(trip_id);
+      remainingWeight = +(trip.max_weight_kg - usedWeight).toFixed(2);
+
+      if (chargedWeight > remainingWeight) {
+        isAccepted = false;
+        rejectReason = remainingWeight <= 0
+          ? "Xe đã đủ hàng, hiện không nhận thêm"
+          : `Quá tải trọng. Còn nhận: ${remainingWeight} kg, yêu cầu: ${chargedWeight} kg`;
+      }
+    }
+
+    // 6d. Kiểm tra thể tích (chỉ khi đơn có nhập kích thước) ──────
+    if (isAccepted && volume_m3) {
+      if (trip.max_volume_m3 === 0) {
+        // 0 = không kiểm soát thể tích → bỏ qua
+      } else {
+        const usedVolume = await getUsedVolume(trip_id);
+        remainingVolume = +(trip.max_volume_m3 - usedVolume).toFixed(4);
+
+        if (volume_m3 > remainingVolume) {
+          isAccepted = false;
+          rejectReason = remainingVolume <= 0
+            ? "Xe đã đủ hàng, hiện không nhận thêm"
+            : `Quá thể tích khoang. Còn nhận: ${remainingVolume} m³, yêu cầu: ${volume_m3} m³`;
+        }
+      }
+    }
+
+    /* 7. Tạo đơn ────────────────────────────────────────────── */
     const code = generateParcelCode();
 
     const [parcel] = await Parcel.create(
-      [
-        {
-          code,
-          trip_id,
-          sender_id,
-          receiver_name: receiver_name.trim(),
-          receiver_phone: receiver_phone.trim(),
-          start_id,
-          end_id,
-          pickup_location_id: pickup_location_id || null,
-          dropoff_location_id: dropoff_location_id || null,
-          weight_kg: weight,
-          parcel_type: parcel_type?.trim() || null,
-          total_price: price,
-          payment_method,
-          payment_status: isAccepted ? "PENDING" : "REFUNDED",
-          approval_status: isAccepted ? APPROVAL_STATUS.APPROVED : APPROVAL_STATUS.REJECTED,
-          status: isAccepted ? "RECEIVED" : "CANCELLED",
-        },
-      ],
+      [{
+        code,
+        trip_id,
+        sender_id,
+        receiver_name: receiver_name.trim(),
+        receiver_phone: receiver_phone.trim(),
+        start_id,
+        end_id,
+        pickup_location_id: pickup_location_id || null,
+        dropoff_location_id: dropoff_location_id || null,
+        item_category,
+        size_category: size_category || null,
+        weight_kg: resolvedWeight,
+        dimensions: dimensions
+          ? {
+            length_cm: dimensions.length_cm || null,
+            width_cm: dimensions.width_cm || null,
+            height_cm: dimensions.height_cm || null,
+          }
+          : { length_cm: null, width_cm: null, height_cm: null },
+        volume_m3,
+        volumetric_weight_kg,
+        parcel_type: parcel_type?.trim() || null,
+        total_price,
+        payment_method,
+        payment_status: isAccepted ? "PENDING" : "REFUNDED",
+        approval_status: isAccepted ? "APPROVED" : "REJECTED",
+        status: isAccepted ? "RECEIVED" : "CANCELLED",
+      }],
       { session }
     );
 
     await session.commitTransaction();
     session.endSession();
 
-    const responseMessage = isAccepted
-      ? "Tạo đơn gửi hàng thành công"
-      : "Đơn bị từ chối vì quá khối lượng của chuyến";
-
     return res.status(201).json({
-      message: responseMessage,
+      message: isAccepted
+        ? "Tạo đơn gửi hàng thành công"
+        : rejectReason ?? "Đơn bị từ chối vì quá sức chứa",
       data: {
         parcel: {
           _id: parcel._id,
@@ -2081,6 +2394,9 @@ module.exports.createParcel = async (req, res) => {
           approval_status: parcel.approval_status,
           total_price: parcel.total_price,
           weight_kg: parcel.weight_kg,
+          volume_m3: parcel.volume_m3,
+          item_category: parcel.item_category,
+          size_category: parcel.size_category,
           created_at: parcel.created_at,
         },
         payment: {
@@ -2094,164 +2410,276 @@ module.exports.createParcel = async (req, res) => {
           currency: "VND",
           description: `Thanh toán đơn gửi hàng ${parcel.code}`,
         },
-        ...(isAccepted
-          ? {}
-          : { remaining_weight_kg: remainingWeight ?? null }),
+        ...(isAccepted ? {} : {
+          remaining_weight_kg: remainingWeight,
+          remaining_volume_m3: remainingVolume,
+        }),
       },
     });
+
   } catch (err) {
-    try {
-      await session.abortTransaction();
-    } catch (_) { }
+    try { await session.abortTransaction(); } catch (_) { }
     session.endSession();
     console.error("[createParcel] Error:", err);
     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
   }
 };
 
-module.exports.getMyParcels = async (req, res) => {
+
+///////////////////////////////
+module.exports.getParcelHistory = async (req, res) => {
   try {
-    const user_id = res.locals.user.id;
+    const sender_id = res.locals.user?.id;
+    if (!sender_id)
+      return res.status(401).json({ message: "Không xác định được tài khoản" });
+
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, parseInt(req.query.limit) || 10);
     const skip = (page - 1) * limit;
 
-    const filter = { sender_id: user_id };
+    const total = await Parcel.countDocuments({ sender_id });
+    const totalPages = Math.ceil(total / limit) || 1;
 
-    if (req.query.status) {
-      filter.status = req.query.status.toUpperCase();
-    }
-    if (req.query.approval_status) {
-      filter.approval_status = req.query.approval_status.toUpperCase();
-    }
-
-    const total = await Parcel.countDocuments(filter);
-    const totalPages = Math.ceil(total / limit);
-
-    const parcels = await Parcel.find(filter)
+    const parcels = await Parcel.find({ sender_id })
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit)
+      /* ── Chuyến đi ─────────────────────────────────────── */
       .populate({
         path: "trip_id",
-        select: "departure_time arrival_time status route_id",
-        populate: {
-          path: "route_id",
-          select: "start_id stop_id",
-          populate: [
-            { path: "start_id", select: "name province" },
-            { path: "stop_id", select: "name province" },
-          ],
-        },
+        select: "departure_time arrival_time status bus_id route_id",
+        populate: [
+          {
+            path: "route_id",
+            select: "start_id stop_id",
+            populate: [
+              { path: "start_id", select: "name province" },
+              { path: "stop_id", select: "name province" },
+            ],
+          },
+          {
+            path: "bus_id",
+            select: "bus_type_id",
+            populate: { path: "bus_type_id", select: "name" },
+          },
+        ],
       })
+      /* ── Điểm đón / trả (RouteStop → stop_id) ─────────── */
       .populate({
         path: "start_id",
-        select: "stop_id stop_order",
+        select: "stop_order stop_id",
+        populate: { path: "stop_id", select: "name province" },
       })
       .populate({
         path: "end_id",
-        select: "stop_id stop_order",
+        select: "stop_order stop_id",
+        populate: { path: "stop_id", select: "name province" },
       })
-      .populate({
-        path: "pickup_location_id",
-        select: "location_name address latitude longitude",
-      })
-      .populate({
-        path: "dropoff_location_id",
-        select: "location_name address latitude longitude",
-      })
+      /* ── Vị trí cụ thể ─────────────────────────────────── */
+      .populate({ path: "pickup_location_id", select: "location_name" })
+      .populate({ path: "dropoff_location_id", select: "location_name" })
       .lean();
+
+    const data = parcels.map((p) => {
+      const trip = p.trip_id;
+
+      return {
+        _id: p._id,
+        code: p.code,
+        status: p.status,
+        approval_status: p.approval_status,
+
+        /* ── Loại hàng ──────────────────────────── */
+        item_category: p.item_category,
+        size_category: p.size_category ?? null,
+
+        /* ── Khối lượng & kích thước ────────────── */
+        weight_kg: p.weight_kg,
+        volume_m3: p.volume_m3 ?? null,
+        volumetric_weight_kg: p.volumetric_weight_kg ?? null,
+        dimensions: p.dimensions
+          ? {
+            length_cm: p.dimensions.length_cm ?? null,
+            width_cm: p.dimensions.width_cm ?? null,
+            height_cm: p.dimensions.height_cm ?? null,
+          }
+          : null,
+        parcel_type: p.parcel_type ?? null,
+
+        /* ── Người nhận ─────────────────────────── */
+        receiver_name: p.receiver_name,
+        receiver_phone: p.receiver_phone,
+
+        /* ── Giá & thanh toán ───────────────────── */
+        total_price: p.total_price,
+        payment_method: p.payment_method,
+        payment_status: p.payment_status,
+
+        /* ── Điểm gửi / nhận ────────────────────── */
+        pickup: {
+          stop_order: p.start_id?.stop_order ?? null,
+          name: p.start_id?.stop_id?.name ?? null,
+          province: p.start_id?.stop_id?.province ?? null,
+          location_name: p.pickup_location_id?.location_name ?? null,
+        },
+        dropoff: {
+          stop_order: p.end_id?.stop_order ?? null,
+          name: p.end_id?.stop_id?.name ?? null,
+          province: p.end_id?.stop_id?.province ?? null,
+          location_name: p.dropoff_location_id?.location_name ?? null,
+        },
+
+        /* ── Thông tin chuyến ───────────────────── */
+        trip: trip
+          ? {
+            _id: trip._id,
+            departure_time: trip.departure_time,
+            arrival_time: trip.arrival_time,
+            status: trip.status,
+            bus_type_name: trip.bus_id?.bus_type_id?.name ?? null,
+            route: {
+              from: {
+                name: trip.route_id?.start_id?.name ?? null,
+                province: trip.route_id?.start_id?.province ?? null,
+              },
+              to: {
+                name: trip.route_id?.stop_id?.name ?? null,
+                province: trip.route_id?.stop_id?.province ?? null,
+              },
+            },
+          }
+          : null,
+
+        created_at: p.created_at,
+      };
+    });
 
     return res.status(200).json({
-      message: "Lấy danh sách đơn gửi hàng thành công",
-      data: parcels,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
+      message: "Lấy lịch sử gửi hàng thành công",
+      data,
+      pagination: { page, limit, total, totalPages },
     });
+
   } catch (err) {
-    console.error("[getMyParcels] Error:", err);
+    console.error("[getParcelHistory] Error:", err);
     return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
   }
 };
 
+/* ─────────────────────────────────────────────────────────────────
+   GET /api/customer/check/parcels/:id
+   ───────────────────────────────────────────────────────────────── */
 module.exports.getParcelDetail = async (req, res) => {
   try {
-    const user_id = res.locals.user.id;
-    const parcelId = req.params.id;
+    const sender_id = res.locals.user?.id;
+    const { id } = req.params;
 
-    const parcel = await Parcel.findOne({ _id: parcelId, sender_id: user_id })
+    const parcel = await Parcel.findOne({ _id: id, sender_id })
       .populate({
         path: "trip_id",
-        select: "departure_time arrival_time status route_id",
-        populate: {
-          path: "route_id",
-          select: "start_id stop_id",
-          populate: [
-            { path: "start_id", select: "name province" },
-            { path: "stop_id", select: "name province" },
-          ],
-        },
+        select: "departure_time arrival_time status bus_id route_id",
+        populate: [
+          {
+            path: "route_id",
+            select: "start_id stop_id",
+            populate: [
+              { path: "start_id", select: "name province" },
+              { path: "stop_id", select: "name province" },
+            ],
+          },
+          {
+            path: "bus_id",
+            select: "bus_type_id",
+            populate: { path: "bus_type_id", select: "name" },
+          },
+        ],
       })
-      .populate({ path: "start_id", select: "stop_id stop_order" })
-      .populate({ path: "end_id", select: "stop_id stop_order" })
-      .populate({
-        path: "pickup_location_id",
-        select: "location_name address latitude longitude",
-      })
-      .populate({
-        path: "dropoff_location_id",
-        select: "location_name address latitude longitude",
-      })
+      .populate({ path: "start_id", select: "stop_order stop_id", populate: { path: "stop_id", select: "name province" } })
+      .populate({ path: "end_id", select: "stop_order stop_id", populate: { path: "stop_id", select: "name province" } })
+      .populate({ path: "pickup_location_id", select: "location_name" })
+      .populate({ path: "dropoff_location_id", select: "location_name" })
       .lean();
 
-    if (!parcel) {
-      return res.status(404).json({ message: "Không tìm thấy đơn" });
-    }
+    if (!parcel)
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
 
-    return res.status(200).json({ message: "OK", data: parcel });
+    const trip = parcel.trip_id;
+
+    return res.status(200).json({
+      message: "Lấy chi tiết đơn hàng thành công",
+      data: {
+        _id: parcel._id,
+        code: parcel.code,
+        status: parcel.status,
+        approval_status: parcel.approval_status,
+        item_category: parcel.item_category,
+        size_category: parcel.size_category ?? null,
+        weight_kg: parcel.weight_kg,
+        volume_m3: parcel.volume_m3 ?? null,
+        volumetric_weight_kg: parcel.volumetric_weight_kg ?? null,
+        dimensions: parcel.dimensions ?? null,
+        parcel_type: parcel.parcel_type ?? null,
+        receiver_name: parcel.receiver_name,
+        receiver_phone: parcel.receiver_phone,
+        total_price: parcel.total_price,
+        payment_method: parcel.payment_method,
+        payment_status: parcel.payment_status,
+        pickup: {
+          stop_order: parcel.start_id?.stop_order ?? null,
+          name: parcel.start_id?.stop_id?.name ?? null,
+          province: parcel.start_id?.stop_id?.province ?? null,
+          location_name: parcel.pickup_location_id?.location_name ?? null,
+        },
+        dropoff: {
+          stop_order: parcel.end_id?.stop_order ?? null,
+          name: parcel.end_id?.stop_id?.name ?? null,
+          province: parcel.end_id?.stop_id?.province ?? null,
+          location_name: parcel.dropoff_location_id?.location_name ?? null,
+        },
+        trip: trip ? {
+          _id: trip._id,
+          departure_time: trip.departure_time,
+          arrival_time: trip.arrival_time,
+          status: trip.status,
+          bus_type_name: trip.bus_id?.bus_type_id?.name ?? null,
+          route: {
+            from: { name: trip.route_id?.start_id?.name ?? null, province: trip.route_id?.start_id?.province ?? null },
+            to: { name: trip.route_id?.stop_id?.name ?? null, province: trip.route_id?.stop_id?.province ?? null },
+          },
+        } : null,
+        created_at: parcel.created_at,
+      },
+    });
+
   } catch (err) {
     console.error("[getParcelDetail] Error:", err);
-    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+    return res.status(500).json({ message: "Lỗi server." });
   }
 };
 
+/* ─────────────────────────────────────────────────────────────────
+   PATCH /api/customer/check/parcels/:id/cancel
+   ───────────────────────────────────────────────────────────────── */
 module.exports.cancelParcel = async (req, res) => {
   try {
-    const user_id = res.locals.user.id;
-    const parcelId = req.params.id;
+    const sender_id = res.locals.user?.id;
+    const { id } = req.params;
 
-    const parcel = await Parcel.findById(parcelId);
-    if (!parcel) {
-      return res.status(404).json({ message: "Không tìm thấy đơn" });
-    }
-    if (parcel.sender_id.toString() !== user_id.toString()) {
-      return res.status(403).json({ message: "Không có quyền hủy đơn này" });
-    }
+    const parcel = await Parcel.findOne({ _id: id, sender_id });
+    if (!parcel)
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
 
-    if ([
-      PARCEL_STATUS.ON_BUS,
-      PARCEL_STATUS.IN_TRANSIT,
-      PARCEL_STATUS.DELIVERED,
-      PARCEL_STATUS.CANCELLED,
-    ].includes(parcel.status)) {
-      return res.status(400).json({ message: "Không thể hủy đơn ở trạng thái hiện tại" });
-    }
+    if (parcel.status !== "RECEIVED")
+      return res.status(400).json({ message: "Chỉ có thể hủy đơn đang ở trạng thái chờ xử lý" });
 
-    parcel.status = PARCEL_STATUS.CANCELLED;
-    if (parcel.payment_status === "PAID") {
-      parcel.payment_status = "REFUNDED";
-    } else if (parcel.payment_status === "PENDING") {
-      parcel.payment_status = "CANCELLED";
-    }
+    parcel.status = "CANCELLED";
+    parcel.payment_status = "REFUNDED";
     await parcel.save();
 
-    return res.status(200).json({ message: "Hủy đơn gửi hàng thành công", data: { parcelId: parcel._id } });
+    return res.status(200).json({ message: "Hủy đơn hàng thành công", data: { _id: parcel._id, status: parcel.status } });
+
   } catch (err) {
     console.error("[cancelParcel] Error:", err);
-    return res.status(500).json({ message: "Lỗi server. Vui lòng thử lại sau." });
+    return res.status(500).json({ message: "Lỗi server." });
   }
 };

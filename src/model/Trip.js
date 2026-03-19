@@ -94,6 +94,12 @@ const TripSchema = new mongoose.Schema(
       enum: ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"],
       default: "SCHEDULED",
     },
+    // kiểm soát thể tích của hàng hóa
+    max_volume_m3: {
+      type: Number,
+      required: false,
+      default: null,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: false },

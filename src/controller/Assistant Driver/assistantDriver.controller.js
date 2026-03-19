@@ -1,7 +1,7 @@
 const Trip = require("../../model/Trip"); // đổi đúng path model của bạn
 const BookingOrder = require("./../../model/BookingOrder")
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
+const Parcel = require("./../../model/Parcel")
 function formatDate(date) {
     if (!date) return null;
     return new Date(date).toISOString().split("T")[0];
@@ -280,7 +280,7 @@ module.exports.getAssistantTripDetail = async (req, res) => {
 
         const bookings = await BookingOrder.find({
             trip_id: tripId,
-            order_status: { $ne: "CANCELLED" },
+            order_status: { $ne: "CANCELLED", $ne: "CREATED" },
         }).lean();
 
         const passengers = bookings.map((b) => ({
@@ -401,5 +401,123 @@ module.exports.updateBoarded = async (req, res) => {
     } catch (err) {
         console.error("[updateBoarded]", err);
         return res.status(500).json({ success: false, message: "Lỗi server" });
+    }
+};
+
+module.exports.getAssistantTripParcels = async (req, res) => {
+    try {
+        const assistantId = res.locals.user?.id;
+        const { tripId } = req.params;
+
+        if (!assistantId)
+            return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+
+        // Xác nhận chuyến thuộc về phụ xe này
+        const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId }).lean();
+        if (!trip)
+            return res.status(404).json({ success: false, message: "Không tìm thấy chuyến xe" });
+
+        const parcels = await Parcel.find({
+            trip_id: tripId,
+            status: { $ne: "CANCELLED" },
+        })
+            .populate({
+                path: "start_id",
+                populate: { path: "stop_id", select: "name province" },
+            })
+            .populate({
+                path: "end_id",
+                populate: { path: "stop_id", select: "name province" },
+            })
+            .populate({ path: "pickup_location_id", select: "location_name" })
+            .populate({ path: "dropoff_location_id", select: "location_name" })
+            .lean();
+
+        const mapped = parcels.map((p) => ({
+            _id: p._id,
+            code: p.code,
+            receiver_name: p.receiver_name,
+            receiver_phone: p.receiver_phone,
+            weight_kg: p.weight_kg,
+            parcel_type: p.parcel_type || null,
+            total_price: p.total_price,
+            status: p.status,
+            approval_status: p.approval_status,
+            payment_method: p.payment_method,
+            payment_status: p.payment_status,
+            start_province: p.start_id?.stop_id?.province || "N/A",
+            start_name: p.start_id?.stop_id?.name || "N/A",
+            end_province: p.end_id?.stop_id?.province || "N/A",
+            end_name: p.end_id?.stop_id?.name || "N/A",
+            pickup_location: p.pickup_location_id?.location_name || null,
+            dropoff_location: p.dropoff_location_id?.location_name || null,
+            created_at: p.created_at,
+        }));
+
+        return res.status(200).json({ success: true, data: mapped });
+    } catch (err) {
+        console.error("[getAssistantTripParcels]", err);
+        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+    }
+};
+module.exports.updateParcelStatus = async (req, res) => {
+    try {
+        const assistantId = res.locals.user?.id;
+        const { parcelId } = req.params;
+        const { status } = req.body;
+
+        if (!assistantId)
+            return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+
+        // ── Validate status đầu vào ──────────────────────────────────────
+        const ALLOWED = ["ON_BUS", "DELIVERED", "CANCELLED"];
+        if (!ALLOWED.includes(status))
+            return res.status(400).json({
+                success: false,
+                message: `Trạng thái không hợp lệ. Chỉ chấp nhận: ${ALLOWED.join(", ")}`,
+            });
+
+        // ── Tìm parcel và verify chuyến thuộc về phụ xe ──────────────────
+        const parcel = await Parcel.findById(parcelId).lean();
+        if (!parcel)
+            return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+
+        const trip = await Trip.findOne({
+            _id: parcel.trip_id,
+            assistant_id: assistantId,
+        }).lean();
+        if (!trip)
+            return res.status(403).json({
+                success: false,
+                message: "Bạn không có quyền cập nhật đơn hàng này",
+            });
+
+        // ── Kiểm tra flow hợp lệ ─────────────────────────────────────────
+        const VALID_TRANSITIONS = {
+            RECEIVED: ["ON_BUS", "CANCELLED"],
+            ON_BUS: ["DELIVERED"],
+        };
+        const allowed = VALID_TRANSITIONS[parcel.status] ?? [];
+        if (!allowed.includes(status))
+            return res.status(400).json({
+                success: false,
+                message: `Không thể chuyển từ "${parcel.status}" sang "${status}"`,
+            });
+
+        // ── Cập nhật ─────────────────────────────────────────────────────
+        const updated = await Parcel.findByIdAndUpdate(
+            parcelId,
+            { $set: { status } },
+            { new: true }
+        ).lean();
+
+        return res.status(200).json({
+            success: true,
+            message: "Cập nhật trạng thái hàng hóa thành công",
+            data: { _id: updated._id, status: updated.status },
+        });
+    } catch (err) {
+        console.error("[updateParcelStatus]", err);
+        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
     }
 };
