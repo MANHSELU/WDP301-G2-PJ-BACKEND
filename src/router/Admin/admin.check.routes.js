@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const adminController = require("../../controller/Admin/admin.controller");
 
+
 // ==================== ACCOUNT ROUTES ====================
 router.get("/accounts", adminController.getAllAccounts);
 router.post("/accounts", adminController.createStaffAccount);

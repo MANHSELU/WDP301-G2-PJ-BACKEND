@@ -1705,28 +1705,28 @@ module.exports.createRoutes = async (req, res) => {
 module.exports.getGeoOfStopLocation = async (req, res) => {
   console.log("chạy vào lấy vị trí");
   try {
-    const { location_name } = req.body;
-    if (!location_name) {
+    const { stop_id, location_name, address} = req.body;
+    if (!location_name || !address || !stop_id) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
-    }
-    console.log("1");
-    const coordinates = await geocodeVietnamese(location_name);
+    };
+    const stop = await Stop.findById(stop_id).select("province");
+    console.log("Query:", location_name, address, stop.province);
+    const coordinates = await geocodeVietnamese(location_name, address, stop.province);
     if (!coordinates) {
       return res.status(404).json({ message: "Không tìm thấy địa điểm" });
     }
-    console.log("2");
-    return res.status(200).json({ coordinates });
+      return res.status(200).json({ coordinates });
   } catch (error) {
-        console.error("FULL ERROR:", error);
-
-    return res.status(500).json({ message: error.message });
+      return res.status(500).json({ message: error.message });
   }
 };
-// Hàm tạo Stop location;
+
+
+// Hàm tạo Stop Location;
 module.exports.createStopLocation = async (req, res) => {
   try {
-    const { stop_id, location_name, address, location } = req.body;
-    if (!stop_id || !location_name || !address || !location) {
+    const { stop_id, location_name, address,status, location, location_type } = req.body;
+    if (!stop_id || !location_name || !address ||!status ||!location || !location_type) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
     const stopLocation = await StopLocation.findOne({ location_name });
@@ -1739,7 +1739,9 @@ module.exports.createStopLocation = async (req, res) => {
       stop_id,
       location_name,
       address,
+      status,
       location,
+      location_type,
     });
     await newStopLocation.save();
     return res.status(201).json({ message: "Tạo vị trí lên xuống thành công" });

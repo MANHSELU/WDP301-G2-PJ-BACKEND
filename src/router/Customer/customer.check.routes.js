@@ -11,5 +11,8 @@ routerUserCheck.put(
 );
 routerUserCheck.post("/create", userController.createBooking);
 routerUserCheck.post("/getOrderHistory", userController.getOrderHistory)
+routerUserCheck.get("/getTripFinishedHistory", userController.getFinishedTripBookingHistory);
+routerUserCheck.post("/reviewTrip", userController.reviewTrip);
+routerUserCheck.get("/reviewTripHistory", userController.getFinishedTripBookingHistoryWithReview);
 
 module.exports = routerUserCheck;

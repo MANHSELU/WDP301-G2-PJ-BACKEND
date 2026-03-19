@@ -14,6 +14,7 @@ const mongoose = require("mongoose");
 const BookingOrder = require("./../../model/BookingOrder")
 const BookingPayment = require("./../../model/BookingPayment")
 const Stops = require("./../../model/Stops")
+const TripReview = require("./../../model/TripReview");
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -132,7 +133,6 @@ module.exports.checkphone = async (req, res) => {
         message: "Phone is required",
       });
     }
-
     const customer = await User.findOne({ phone });
 
     return res.status(200).json({
@@ -1740,4 +1740,143 @@ module.exports.getRoutesToday = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
+// Hàm lấy lịch sử chuyến đi booking đã hoàn thành
+module.exports.getFinishedTripBookingHistory = async (req, res) => {
+  try {
+    const user_id = res.locals.user.id;
+    const orderHistory = await BookingOrder.find({ user_id })
+      .populate({
+        path: "trip_id",
+        match: { status: "FINISHED" },
+        populate: [
+          {
+            path: "route_id",
+            populate: [
+              { path: "start_id", select: "province" },
+              { path: "stop_id", select: "province" },
+            ],
+          },
+          {
+            path: "bus_id",
+            populate: {
+              path: "bus_type_id",
+              select: "name",
+            },
+          },
+        ],
+      })
+      .lean();
+      const reviewed = await TripReview.find({ booking_id: { $in: orderHistory.map(o => o._id) } }).select("booking_id").lean(); 
+      const reviewedIds = reviewed.map(r => r.booking_id.toString());
+     const result = orderHistory
+      .filter((o) => o.trip_id && !reviewedIds.includes(o._id.toString()))
+      .map((o) => ({
+        _id: o._id,
+        trip_id : o.trip_id,
+        from: o.trip_id.route_id.start_id.province,
+        to: o.trip_id.route_id.stop_id.province,
+        departure_time: o.trip_id.departure_time,
+        arrival_time: o.trip_id.arrival_time,
+        bus_name: o.trip_id.bus_id.bus_type_id.name,
+        pickup_point: o.start_info.specific_location || o.start_info.city,
+        dropoff_point: o.end_info.specific_location || o.end_info.city,
+        seat_labels: o.seat_labels,
+        total_price: o.total_price,
+        status: o.trip_id.status,
+      }));
+    return res.status(200).json(result);
+  } catch (error) {
+    console.log("ERROR", error);
+    return res
+      .status(500)
+      .json({ message: "Lỗi server", error: error.message });
+  }
+};
+// Hàm đánh giá chuyến đi 
+module.exports.reviewTrip = async (req,res) => {
+  try {
+    const user_id = res.locals.user.id;
+    const {booking_id,trip_id,rating,comment,driver_rating,assistant_rating,bus_rating} = req.body;
+    if(!booking_id || !trip_id || !user_id || !rating || !comment || !driver_rating || !assistant_rating || ! bus_rating){
+      return res.status(404).json({message : "Các trường là bắt buộc"});
+    };
+    const existing = await TripReview.findOne({ booking_id, user_id });
+    if (existing) {
+      return res.status(400).json({ message: "Bạn đã đánh giá rồi" });
+    };
+    if (rating < 1 || rating > 5) {
+    return res.status(400).json({ message: "Rating phải từ 1 đến 5" });
+    };
+    const newReview = await TripReview.create({
+      booking_id,
+      trip_id,
+      user_id,
+      rating,
+      comment,
+      driver_rating,
+      assistant_rating,
+      bus_rating
+    });
+    await newReview.save();
+    return res.status(201).json({message : "Gửi đánh giá thành công"});
+  } catch (error) {
+    return res.status(500).json(error.message);
+  }
+};
 
+// Hàm lấy lịch sử chuyến đi đã review
+module.exports.getFinishedTripBookingHistoryWithReview = async (req, res) => {
+  try {
+    const user_id = res.locals.user.id;
+    const orderHistory = await BookingOrder.find({ user_id })
+      .populate({
+        path: "trip_id",
+        match: { status: "FINISHED" },
+        populate: [
+          {
+            path: "route_id",
+            populate: [
+              { path: "start_id", select: "province" },
+              { path: "stop_id", select: "province" },
+            ],
+          },
+          {
+            path: "bus_id",
+            populate: {
+              path: "bus_type_id",
+              select: "name",
+            },
+          },
+        ],
+      })
+      .lean();
+      const reviewed = await TripReview.find({booking_id: { $in: orderHistory.map(o => o._id) }}).lean();      
+      const reviewedIds = reviewed.map(r => r.booking_id.toString());
+      const reviewMap = {};reviewed.forEach(r => {reviewMap[r.booking_id.toString()] = r;});
+      const result = orderHistory
+      .filter((o) => o.trip_id && reviewedIds.includes(o._id.toString()))
+      .map((o) => {
+        const review = reviewMap[o._id.toString()];
+        return {   
+        _id: o._id,
+        trip_id : o.trip_id,
+        from: o.trip_id.route_id.start_id.province,
+        to: o.trip_id.route_id.stop_id.province,
+        departure_time: o.trip_id.departure_time,
+        arrival_time: o.trip_id.arrival_time,
+        bus_name: o.trip_id.bus_id.bus_type_id.name,
+        pickup_point: o.start_info.specific_location || o.start_info.city,
+        dropoff_point: o.end_info.specific_location || o.end_info.city,
+        seat_labels: o.seat_labels,
+        total_price: o.total_price,
+        status: o.trip_id.status,
+        review: review,
+      }});
+    return res.status(200).json(result);
+  } catch (error) {
+    console.log("ERROR", error);
+    return res
+      .status(500)
+      .json({ message: "Lỗi server", error: error.message });
+  }
+};
