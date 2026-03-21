@@ -922,25 +922,91 @@ module.exports.endPoint = async (req, res) => {
     })
   }
 }
+// module.exports.startPoint = async (req, res) => {
+//   try {
+//     const { route_id, trips_id } = req.body;
+//     console.log("router_id là: ", route_id)
+//     const routerStop = await RouteStop.find({
+//       route_id: route_id,
+//       is_pickup: true
+//     }).populate("stop_id")
+//     return res.status(200).json({
+//       message: "Success",
+//       data: routerStop
+//     })
+//   } catch (err) {
+//     console.log("lỗi trong chương trình là: ", err)
+//     return res.status(500).json({
+//       message: "Server Error",
+//     })
+//   }
+// }
 module.exports.startPoint = async (req, res) => {
   try {
-    const { route_id } = req.body;
-    console.log("router_id là: ", route_id)
-    const routerStop = await RouteStop.find({
+    console.log("chạy vào điểm bắt đầu");
+    const { route_id, trips_id } = req.body;
+    console.log("trips_id:", trips_id);
+
+    const trip = await Trip.findById(trips_id).lean();
+    console.log("trip:", trip);
+
+    if (!trip) {
+      return res.status(404).json({ message: "Không tìm thấy chuyến đi" });
+    }
+
+    const now = new Date();
+    const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000); // now + 2 tiếng
+
+    // Chỉ để debug — log ra giờ VN
+    const vnOffset = 7 * 60 * 60 * 1000;
+    console.log("now (VN)          :", new Date(now.getTime() + vnOffset).toISOString().replace("T", " ").slice(0, 19));
+    console.log("twoHoursLater (VN):", new Date(twoHoursLater.getTime() + vnOffset).toISOString().replace("T", " ").slice(0, 19));
+    console.log("departure (VN)    :", new Date(trip.departure_time.getTime() + vnOffset).toISOString().replace("T", " ").slice(0, 19));
+
+    // Lấy tất cả điểm đón của tuyến
+    const routeStops = await RouteStop.find({
       route_id: route_id,
-      is_pickup: true
-    }).populate("stop_id")
+      is_pickup: true,
+    }).populate("stop_id").lean();
+
+    // Lọc: chỉ lấy điểm mà xe sẽ đến SAU 2 tiếng kể từ hiện tại
+    // arrivalAtStop >= twoHoursLater
+    const filteredStops = routeStops.filter((stop) => {
+      console.log("stop.estimated_time là :", stop.estimated_time * 60 * 1000 * 60)
+
+      const arrivalAtStop = new Date(
+        trip.departure_time.getTime() + stop.estimated_time * 60 * 60 * 1000
+      );
+
+      console.log(
+        `Stop order ${stop.stop_order}`,
+        `— arrival (VN): ${new Date(arrivalAtStop.getTime() + vnOffset).toISOString().replace("T", " ").slice(0, 19)}`,
+        `— lấy: ${arrivalAtStop >= twoHoursLater}`
+      );
+
+      // Lấy vào nếu xe đến điểm này còn hơn 2 tiếng nữa
+      return arrivalAtStop >= twoHoursLater;
+    });
+
+    console.log("filteredStops:", filteredStops.length, "/", routeStops.length);
+
     return res.status(200).json({
       message: "Success",
-      data: routerStop
-    })
+      data: filteredStops,
+      debug: {
+        now,
+        twoHoursLater,
+        departure_time: trip.departure_time,
+        total_stops: routeStops.length,
+        filtered_stops: filteredStops.length,
+      },
+    });
+
   } catch (err) {
-    console.log("lỗi trong chương trình là: ", err)
-    return res.status(500).json({
-      message: "Server Error",
-    })
+    console.error("[startPoint] Lỗi:", err);
+    return res.status(500).json({ message: "Server Error" });
   }
-}
+};
 module.exports.locationPoint = async (req, res) => {
   try {
     const { stop_id, route_id } = req.body
