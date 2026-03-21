@@ -15,6 +15,7 @@ const BookingOrder = require("./../../model/BookingOrder")
 const BookingPayment = require("./../../model/BookingPayment")
 const Stops = require("./../../model/Stops")
 const Parcel = require("../../model/Parcel")
+const PaymentTransaction = require("./../../model/PaymentTransaction")
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -2681,5 +2682,65 @@ module.exports.cancelParcel = async (req, res) => {
   } catch (err) {
     console.error("[cancelParcel] Error:", err);
     return res.status(500).json({ message: "Lỗi server." });
+  }
+};
+
+
+
+const REFUND_RATIO = 0.7;
+
+/* ═══════════════════════════════════════════════════════════════════
+   CUSTOMER — Hủy vé
+   PATCH /api/customer/check/orders/:orderId/cancel
+═══════════════════════════════════════════════════════════════════ */
+module.exports.cancelOrder = async (req, res) => {
+  try {
+    const user_id = res.locals.user?.id;
+    const { orderId } = req.params;
+
+    const order = await BookingOrder.findOne({ _id: orderId, user_id });
+    if (!order)
+      return res.status(404).json({ message: "Không tìm thấy đơn đặt vé" });
+    if (order.order_status === "CANCELLED")
+      return res.status(400).json({ message: "Vé đã bị hủy trước đó" });
+    if (!["CREATED", "PAID"].includes(order.order_status))
+      return res.status(400).json({ message: "Không thể hủy vé ở trạng thái này" });
+
+    // Khách tự nhập STK nhận hoàn tiền
+    const { bank_name, account_number, account_name } = req.body ?? {};
+
+    const payment = await BookingPayment.findOne({ order_id: orderId });
+
+    let refund_amount = 0;
+    let refund_account = null;
+    let refund_bank = null;
+    let refund_code = null;
+
+    if (payment && payment.payment_status === "PAID") {
+      refund_amount = Math.round(payment.amount * REFUND_RATIO);
+      refund_account = account_number?.trim() || null;  // ← khách tự nhập
+      refund_bank = bank_name?.trim() || null;
+      refund_code = `HOAN ${payment._id.toString().slice(-8).toUpperCase()}`;
+
+      payment.payment_status = "REFUNDED";
+      payment.refund_amount = refund_amount;
+      payment.refund_account = refund_account;
+      payment.refund_bank = refund_bank;
+      payment.refund_code = refund_code;
+      await payment.save();
+    }
+
+    order.order_status = "CANCELLED";
+    await order.save();
+
+    return res.status(200).json({
+      message: refund_amount > 0
+        ? `Hủy vé thành công. Hoàn ${refund_amount.toLocaleString("vi-VN")}đ (70%) trong 1–3 ngày.`
+        : "Hủy vé thành công.",
+      data: { order_status: "CANCELLED", refund_amount, refund_account, refund_bank, refund_code },
+    });
+  } catch (err) {
+    console.error("[cancelOrder]", err);
+    return res.status(500).json({ message: "Lỗi server" });
   }
 };

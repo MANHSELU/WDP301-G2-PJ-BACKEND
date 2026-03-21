@@ -29,7 +29,7 @@ const BookingPaymentSchema = new mongoose.Schema(
         },
         payment_status: {
             type: String,
-            enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
+            enum: ["PENDING", "PAID", "FAILED", "REFUNDED", "REFUND_SUCCESS"],
             default: "PENDING",
         },
         transaction_code: {
@@ -41,14 +41,18 @@ const BookingPaymentSchema = new mongoose.Schema(
             type: Date,
             default: null,
         },
-        // số tiền hoàn lại nếu hủy vé
-        refund_amount: {
-            type: Number,
-            default: 0,
+        // ← THÊM: số TK khách cần nhận hoàn tiền (lấy từ PaymentTransaction.account_number)
+        refund_account: {
+            type: String,
+            default: null,
         },
-        //Lưu thời điểm hoàn tiền.
-        refunded_at: {
-            type: Date,
+        refund_bank: {
+            type: String,
+            default: null,
+        },
+        // ← THÊM: ghi chú của lễ tân khi xác nhận hoàn
+        refund_note: {
+            type: String,
             default: null,
         },
     },
