@@ -1856,7 +1856,13 @@ module.exports.getOrderHistory = async (req, res) => {
     const total = await BookingOrder.countDocuments({ user_id });
     const totalPages = Math.ceil(total / limit);
 
-    const orders = await BookingOrder.find({ user_id, order_status: "PAID" })
+    const orders = await BookingOrder.find({
+      user_id,
+      $or: [
+        { order_status: "PAID" },
+        { order_status: "CANCELLED" },
+      ]
+    })
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit)
@@ -1951,7 +1957,7 @@ module.exports.getOrderHistory = async (req, res) => {
           : null,
       };
     });
-
+    console.log("lấy lịch sử đặt vé thành công")
     return res.status(200).json({
       message: "Lấy lịch sử đặt vé thành công",
       data,
