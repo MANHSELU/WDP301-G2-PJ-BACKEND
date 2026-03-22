@@ -1744,7 +1744,7 @@ module.exports.getRoutesToday = async (req, res) => {
 module.exports.getFinishedTripBookingHistory = async (req, res) => {
   try {
     const user_id = res.locals.user.id;
-    const orderHistory = await BookingOrder.find({ user_id })
+    const orderHistory = await BookingOrder.find({ user_id, order_status:"PAID" })
       .populate({
         path: "trip_id",
         match: { status: "FINISHED" },
