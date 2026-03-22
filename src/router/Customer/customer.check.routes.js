@@ -23,5 +23,7 @@ routerUserCheck.post("/parcels", userController.createParcel);
 routerUserCheck.get("/parcels", userController.getMyParcels);
 routerUserCheck.get("/parcels/:id", userController.getParcelDetail);
 routerUserCheck.patch("/parcels/:id/cancel", userController.cancelParcel);
-
+routerUserCheck.get("/getTripFinishedHistory", userController.getFinishedTripBookingHistory);
+routerUserCheck.post("/reviewTrip", userController.reviewTrip);
+routerUserCheck.get("/reviewTripHistory", userController.getFinishedTripBookingHistoryWithReview);
 module.exports = routerUserCheck;

@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const adminController = require("../../controller/Admin/admin.controller");
 
+
 // ==================== ACCOUNT ROUTES ====================
 router.get("/accounts", adminController.getAllAccounts);
 router.post("/accounts", adminController.createStaffAccount);
@@ -55,10 +56,15 @@ router.put("/locations/:id", adminController.updateLocation);
 router.patch("/locations/:id/status", adminController.updateLocationStatus);
 router.delete("/locations/:id", adminController.deleteLocation);
 
-router.post("/buses", adminController.createBus);
+router.post("/buses", adminController.createBus); 
 router.post("/routes", adminController.createRoutes);
 router.get("/recommendStops", adminController.getSuggestStops);
 router.get("/getAllStops", adminController.getAllStops);
+router.patch("/updateStopStatus", adminController.updateStopStatus);
+router.patch("/updateMainStopLocation",adminController.updateMainStopLocationOfStops);
+router.patch("/updateStopLocationStatus",adminController.updateStopLocationStatus);
+router.get("/getAllStopsNotFilter", adminController.getAllStopsNotFilterByStatus);
+router.get("/getStopLocationOfStop", adminController.getAllStopLocationOfStop);
 router.post("/getGeoStopLocation", adminController.getGeoOfStopLocation);
 router.post("/createStopLocation", adminController.createStopLocation);
 router.get("/getRoutes", adminController.getAllRoutes);
