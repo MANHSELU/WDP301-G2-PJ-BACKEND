@@ -20,10 +20,14 @@ routerUserCheck.post("/getOrderHistory", userController.getOrderHistory);
 
 // Delivery / Parcel endpoints (customer)
 routerUserCheck.post("/parcels", userController.createParcel);
-routerUserCheck.get("/parcels", userController.getMyParcels);
+// tạo
+routerUserCheck.get("/parcels", userController.getParcelHistory);
 routerUserCheck.get("/parcels/:id", userController.getParcelDetail);
 routerUserCheck.patch("/parcels/:id/cancel", userController.cancelParcel);
 routerUserCheck.get("/getTripFinishedHistory", userController.getFinishedTripBookingHistory);
 routerUserCheck.post("/reviewTrip", userController.reviewTrip);
 routerUserCheck.get("/reviewTripHistory", userController.getFinishedTripBookingHistoryWithReview);
+// dùng customer 
+routerUserCheck.patch("/orders/:orderId/cancel", userController.cancelOrder);
+
 module.exports = routerUserCheck;
