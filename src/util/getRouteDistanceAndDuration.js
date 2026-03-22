@@ -3,7 +3,7 @@ const axios = require("axios");
 async function getRouteDistanceAndDuration(coords) {
   // coords = ["lng,lat","lng,lat","lng,lat"]
 
-const url = `http://router.project-osrm.org/route/v1/driving/${coords.join(";")}?overview=false&steps=true`;
+  const url = `http://router.project-osrm.org/route/v1/driving/${coords.join(";")}?overview=false&steps=true`;
 
   const response = await axios.get(url);
 

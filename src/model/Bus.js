@@ -117,13 +117,15 @@ const BusSchema = new mongoose.Schema({
         unique: true,
         trim: true,
     },
-
     bus_type_id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "BusType",
         required: true,
     },
-
+    current_stop_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Stop",
+    },
     status: {
         type: String,
         enum: ["ACTIVE", "MAINTENANCE"],

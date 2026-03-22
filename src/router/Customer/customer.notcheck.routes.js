@@ -20,4 +20,6 @@ router.post("/start-point", controller.startPoint);
 router.post("/location-point", controller.locationPoint);
 router.post("/getPrice", controller.getPrice)
 router.post("/booked-seats", controller.getBookedSeats)
+router.get("/view-route", controller.getRoutesToday)
+
 module.exports = router;

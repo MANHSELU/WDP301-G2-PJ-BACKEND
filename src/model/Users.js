@@ -39,7 +39,10 @@ const userSchema = new mongoose.Schema(
       ref: "Role", // tên model
       required: true,
     },
-
+    current_stop_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Stop",
+    },
     status: {
       type: String,
       enum: ["active", "inactive", "banned"],

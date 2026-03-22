@@ -32,6 +32,17 @@ const BookingOrderSchema = new mongoose.Schema(
             enum: ["CREATED", "PAID", "CANCELLED"],
             default: "CREATED",
         },
+        // lưu snapshot điểm đón
+        start_info: {
+            city: String,           // Hà Nội
+            specific_location: String // bến xe hà nooij hay ....
+        },
+
+        // lưu snapshot điểm trả
+        end_info: {
+            city: String,           // Hà Nam
+            specific_location: String // Điểm phía Bắc - Bến xe Hà Nam
+        },
         seat_labels: {
             type: [String],
             default: [],
@@ -52,6 +63,24 @@ const BookingOrderSchema = new mongoose.Schema(
             type: Number,
             required: true,
             min: 0,
+        },
+        // ── Trạng thái lên/xuống xe (phụ xe cập nhật) ──────────────────────
+        is_boarded: {
+            type: Boolean,
+            default: false,     // false = chưa lên / vắng mặt
+        },
+        boarded_at: {
+            type: Date,
+            default: null,      // thời điểm lên xe
+        },
+        // ── Trạng thái xuống xe ─────────────────────────────────────────────
+        is_alighted: {
+            type: Boolean,
+            default: false,     // false = chưa xuống
+        },
+        alighted_at: {
+            type: Date,
+            default: null,      // thời điểm xuống xe
         },
     },
     {

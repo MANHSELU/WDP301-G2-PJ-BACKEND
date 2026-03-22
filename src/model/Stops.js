@@ -4,12 +4,16 @@ const mongoose = require("mongoose");
 
 const StopSchema = new mongoose.Schema(
   {
-    name: { // điểm xuất phát và điểm kết thúc chính của 1 bến xe ===> muốn đổi thì phải update
-      type: String,
-      required: true, // Bến xe Đà Nẵng, Quảng Nam
-      trim: true,
+    stopLocation_id: {
+      type: mongoose.Schema.Types.ObjectId, // Điểm bắt đầu và điểm kết thúc chính của tỉnh thành
+      ref: "StopLocation",
+      required: false,
     },
-
+    name: {
+        type: String,
+        required: true,
+        trim: true,
+      },
     province: {
       type: String,
       required: true,
