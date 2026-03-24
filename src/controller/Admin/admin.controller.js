@@ -1755,7 +1755,7 @@ module.exports.getAllRoutes = async (req, res) => {
   try {
     const allRoutes = await Route.find()
       .select("start_id stop_id estimated_duration")
-      .populate("start_id", "name")
+      .populate("start_id", "name") 
       .populate("stop_id", "name");
     return res.status(200).json(allRoutes);
   } catch (error) {
@@ -2862,3 +2862,83 @@ module.exports.updateStopLocationStatus = async (req,res) =>{
     return res.status(500).json({ message: error.message });
   }
 } 
+module.exports.viewBuses = async (req, res) => {
+  try {
+    const {
+      search = "",
+      bus_type_id,
+      status,
+      sortBy = "created_at",
+      sortOrder = "desc",
+    } = req.query;
+
+    const { page: validPage, limit: validLimit } = validatePagination(
+      req.query.page,
+      req.query.limit
+    );
+    const skip = (validPage - 1) * validLimit;
+
+    const query = {};
+
+    if (search && search.trim()) {
+      query.license_plate = { $regex: search.trim(), $options: "i" };
+    }
+
+    if (bus_type_id) {
+      if (!isValidObjectId(bus_type_id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid bus_type_id format",
+        });
+      }
+      query.bus_type_id = bus_type_id;
+    }
+
+    if (status) {
+      if (!isValidBusStatus(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid status. Must be ACTIVE or MAINTENANCE",
+        });
+      }
+      query.status = status;
+    }
+
+    const sortOptions = { [sortBy]: sortOrder === "asc" ? 1 : -1 };
+
+    const [buses, totalItems] = await Promise.all([
+      Bus.find(query)
+        .select("license_plate status seat_layout bus_type_id created_at")
+        .populate("bus_type_id", "name category")
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(validLimit)
+        .lean(),
+      Bus.countDocuments(query),
+    ]);
+
+    const totalPages = Math.ceil(totalItems / validLimit);
+
+    return res.status(200).json({
+      success: true,
+      message: "Buses retrieved successfully",
+      data: {
+        buses,
+        pagination: {
+          currentPage: validPage,
+          totalPages,
+          totalItems,
+          itemsPerPage: validLimit,
+          hasNextPage: validPage < totalPages,
+          hasPrevPage: validPage > 1,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in getBuses:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};

@@ -76,4 +76,6 @@ router.get("/getDurationHandicraft", adminController.getDurationOfHandicraft);
 router.get("/trips", adminController.getAllTrips);
 router.get("/trips/:id", adminController.getTripById);
 router.put("/trips/:id", adminController.updateTrip);
+router.get("/viewBuses", adminController.viewBuses);
+
 module.exports = router;
