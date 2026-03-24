@@ -1593,6 +1593,7 @@ module.exports.createBooking = async (req, res) => {
       passenger_phone,
       start_info,   // { city, specific_location }
       end_info,     // { city, specific_location }
+      passengers = [],
     } = req.body;
 
     /* ════════════════════════════════════
@@ -1704,6 +1705,17 @@ module.exports.createBooking = async (req, res) => {
           total_price,
           passenger_name: passenger_name.trim(),
           passenger_phone: passenger_phone.trim(),
+          passengers: passengers.length > 0
+            ? passengers.map(p => ({
+              seat_label: p.seat_label,
+              name: p.name.trim(),
+              phone: p.phone.trim(),
+            }))
+            : seat_labels.map(seat => ({
+              seat_label: seat,
+              name: passenger_name.trim(),
+              phone: passenger_phone.trim(),
+            })),
         },
       ],
       { session }
@@ -2010,7 +2022,7 @@ module.exports.getRoutesToday = async (req, res) => {
 module.exports.getFinishedTripBookingHistory = async (req, res) => {
   try {
     const user_id = res.locals.user.id;
-    const orderHistory = await BookingOrder.find({ user_id, order_status:"PAID" })
+    const orderHistory = await BookingOrder.find({ user_id, order_status: "PAID" })
       .populate({
         path: "trip_id",
         match: { status: "FINISHED" },
