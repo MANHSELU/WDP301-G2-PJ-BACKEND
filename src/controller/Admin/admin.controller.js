@@ -3545,7 +3545,10 @@ module.exports.getBusTypes = async (req, res) => {
 };
 
 /** POST /api/admin/check/busTypes */
+const CATEGORIES = ["SEAT", "SLEEPER", "LIMOUSINE", "VIP", "OTHER"];
+const AMENITIES = ["AC", "WIFI", "USB", "TV", "TOILET", "BLANKET", "WATER", "SNACK"];
 module.exports.createBusType = async (req, res) => {
+  console.log("chạy vào tạo")
   try {
     const { name, description, category, amenities, isActive } = req.body;
     if (!name?.trim()) return fail(res, "Tên loại xe là bắt buộc", 400);
