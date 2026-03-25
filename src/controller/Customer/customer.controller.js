@@ -747,7 +747,7 @@ module.exports.getSearch = async (req, res) => {
       // ── 4. Tìm trip có ngày xe đến startStop (giờ VN) = ngày khách chọn ──
       const trips = await Trip.find({
         route_id: startStop.route_id,
-        status: { $ne: "CANCELLED" },
+        status: { $ne: "CANCELLED", $ne: "FINISHED" },
       }).lean();
 
       const hasMatchingTrip = trips.some((trip) => {

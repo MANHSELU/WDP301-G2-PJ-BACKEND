@@ -7,7 +7,8 @@ const Stop = require("../../model/Stops");
 const RouteStop = require("../../model/route_stops");
 const StopLocation = require("../../model/StopLocation");
 const RouteSegmentPrice = require("../../model/RouteSegmentPrice");
-
+const BookingOrder = require("./../../model/BookingOrder")
+const bcrypt = require("bcryptjs")
 const { getStartToEndDuration } = require("../../util/ApiDistanceStartToEnd");
 const {
   getRouteDistanceAndDuration,
@@ -26,6 +27,25 @@ const Route_Stop = require("../../model/route_stops");
 const Stops = require("../../model/Stops");
 const Trip = require("../../model/Trip");
 const { haversine, pointToLineDistance } = require("../../util/geoUtil");
+module.exports.getRole = async (req, res) => {
+  try {
+    const roles = await Role.find({ deletedAt: null })
+      .select("_id name description isActive")
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      message: "Lấy danh sách vai trò thành công",
+      data: roles,
+    });
+  } catch (err) {
+    console.log("lỗi trong chương trình là : ", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server khi lấy danh sách vai trò",
+    });
+  }
+}
 //get all acccount
 module.exports.getAllAccounts = async (req, res) => {
   try {
@@ -112,7 +132,75 @@ module.exports.getAllAccounts = async (req, res) => {
     });
   }
 };
+// hàm này oke nè
+module.exports.updateAccount = async (req, res) => {
+  console.log("chạy vào update trạng thái")
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
 
+    // ── 1. Validate status ──────────────────────────────────────
+    const ALLOWED_STATUS = ["active", "inactive", "banned"];
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu trường 'status' trong body",
+      });
+    }
+    if (!ALLOWED_STATUS.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Trạng thái không hợp lệ. Chỉ chấp nhận: ${ALLOWED_STATUS.join(", ")}`,
+      });
+    }
+
+    // ── 2. Validate ObjectId ────────────────────────────────────
+    const mongoose = require("mongoose");
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID tài khoản không hợp lệ",
+      });
+    }
+
+    // ── 3. Tìm và cập nhật ─────────────────────────────────────
+    const user = await User.findOne({ _id: id, deletedAt: null });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy tài khoản",
+      });
+    }
+
+    // Không cho phép tự khoá tài khoản admin đang đăng nhập
+    if (req.user && req.user._id.toString() === id && status !== "active") {
+      return res.status(403).json({
+        success: false,
+        message: "Không thể tự khoá tài khoản của chính mình",
+      });
+    }
+
+    user.status = status;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Cập nhật trạng thái thành công: ${status}`,
+      data: {
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+        status: user.status,
+      },
+    });
+  } catch (err) {
+    console.log("Lỗi trong updateRouteStatus:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server khi cập nhật trạng thái",
+    });
+  }
+};
 //get account by id
 module.exports.getAccountById = async (req, res) => {
   try {
@@ -699,67 +787,67 @@ module.exports.updateRoute = async (req, res) => {
 };
 
 //update bật tắt cập nhật trạng thái route
-module.exports.updateRouteStatus = async (req, res) => {
-  try {
-    const currentUser = res.locals.user;
+// module.exports.updateRouteStatus = async (req, res) => {
+//   try {
+//     const currentUser = res.locals.user;
 
-    // if (!isAdmin(currentUser)) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: "Access denied. Admin privileges required.",
-    //   });
-    // }
+//     // if (!isAdmin(currentUser)) {
+//     //   return res.status(403).json({
+//     //     success: false,
+//     //     message: "Access denied. Admin privileges required.",
+//     //   });
+//     // }
 
-    const { id } = req.params;
-    const { is_active } = req.body;
+//     const { id } = req.params;
+//     const { is_active } = req.body;
 
-    if (!isValidObjectId(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid route ID format",
-      });
-    }
+//     if (!isValidObjectId(id)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid route ID format",
+//       });
+//     }
 
-    if (is_active === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: "is_active field is required",
-      });
-    }
+//     if (is_active === undefined) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "is_active field is required",
+//       });
+//     }
 
-    const updatedRoute = await Route.findByIdAndUpdate(
-      id,
-      { $set: { is_active: Boolean(is_active) } },
-      { new: true }
-    )
-      .populate("start_id", "name type")
-      .populate("stop_id", "name type")
-      .lean();
+//     const updatedRoute = await Route.findByIdAndUpdate(
+//       id,
+//       { $set: { is_active: Boolean(is_active) } },
+//       { new: true }
+//     )
+//       .populate("start_id", "name type")
+//       .populate("stop_id", "name type")
+//       .lean();
 
-    if (!updatedRoute) {
-      return res.status(404).json({
-        success: false,
-        message: "Route not found",
-      });
-    }
+//     if (!updatedRoute) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Route not found",
+//       });
+//     }
 
-    return res.status(200).json({
-      success: true,
-      message: `Route ${is_active ? "activated" : "deactivated"} successfully`,
-      data: {
-        _id: updatedRoute._id,
-        name: `${updatedRoute.start_id?.name} - ${updatedRoute.stop_id?.name}`,
-        is_active: updatedRoute.is_active,
-      },
-    });
-  } catch (error) {
-    console.error("❌ Error in updateRouteStatus:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-};
+//     return res.status(200).json({
+//       success: true,
+//       message: `Route ${is_active ? "activated" : "deactivated"} successfully`,
+//       data: {
+//         _id: updatedRoute._id,
+//         name: `${updatedRoute.start_id?.name} - ${updatedRoute.stop_id?.name}`,
+//         is_active: updatedRoute.is_active,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("❌ Error in updateRouteStatus:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// };
 
 //update thứ tự điểm dừng (stop) trong route
 module.exports.updateRouteStopOrder = async (req, res) => {
@@ -1510,6 +1598,7 @@ module.exports.createBus = async (req, res) => {
 };
 // Hàm lấy tất cả các điểm stop
 module.exports.getAllStops = async (req, res) => {
+  console.log("chạy vào lấy toàn bộ stop")
   try {
     const searchStops = await Stops.find({ is_active: true }).select("name province is_active");
     return res.status(200).json(searchStops);
@@ -2758,26 +2847,78 @@ module.exports.updateTrip = async (req, res) => {
 // Hàm tạo tài khoản nhân viên
 module.exports.createStaffAccount = async (req, res) => {
   try {
-    const { name, phone, password, role } = req.body;
+    const { name, phone, password, role, current_stop_id } = req.body;
+
+    // ── 1. Validate bắt buộc ──────────────────────────────────
     if (!name || !phone || !password || !role) {
-      return res.status(404).json({ message: "Các trường nhập là bắt buộc" });
+      return res.status(400).json({
+        success: false,
+        message: "Các trường name, phone, password, role là bắt buộc",
+      });
     }
-    const existedStaff = await User.findOne({ phone });
+
+    // ── 2. Validate ObjectId role ─────────────────────────────
+    if (!mongoose.Types.ObjectId.isValid(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "role phải là ObjectId hợp lệ",
+      });
+    }
+
+    // ── 3. Validate ObjectId current_stop_id (nếu có) ─────────
+    if (current_stop_id && !mongoose.Types.ObjectId.isValid(current_stop_id)) {
+      return res.status(400).json({
+        success: false,
+        message: "current_stop_id phải là ObjectId hợp lệ",
+      });
+    }
+
+    // ── 4. Kiểm tra phone đã tồn tại ──────────────────────────
+    const existedStaff = await User.findOne({ phone, deletedAt: null });
     if (existedStaff) {
-      return res.status(400).json({ message: "Số điện thoại đã được đăng kí" });
+      return res.status(400).json({
+        success: false,
+        message: "Số điện thoại đã được đăng ký",
+      });
     }
-    const newStaff = await User.create({
-      name,
+
+    // ── 5. Hash password ──────────────────────────────────────
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // ── 6. Tạo user ───────────────────────────────────────────
+    const userData = {
+      name: name.trim(),
       phone,
-      password,
+      password: hashedPassword,
       role,
+      isVerified: true, // nhân sự tạo bởi admin → xác thực luôn
+    };
+
+    // Chỉ gán current_stop_id nếu có giá trị (tránh ghi undefined vào DB)
+    if (current_stop_id) {
+      userData.current_stop_id = current_stop_id;
+    }
+
+    const newStaff = await User.create(userData);
+
+    return res.status(201).json({
+      success: true,
+      message: "Tạo tài khoản nhân viên thành công",
+      data: {
+        _id: newStaff._id,
+        name: newStaff.name,
+        phone: newStaff.phone,
+        role: newStaff.role,
+        current_stop_id: newStaff.current_stop_id ?? null,
+        status: newStaff.status,
+      },
     });
-    await newStaff.save();
-    return res
-      .status(201)
-      .json({ message: "Tạo tài khoản nhân viên thành công" });
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    console.log("Lỗi createStaffAccount:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 module.exports.searchStopsTimeTable = async (req, res) => {
@@ -2946,4 +3087,537 @@ module.exports.updateStopLocationStatus = async (req, res) => {
     console.log("Error", error.message);
     return res.status(500).json({ message: error.message });
   }
-} 
+}
+//route
+const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
+const toOid = (id) => new mongoose.Types.ObjectId(String(id));
+
+const ok = (res, data, msg = "Thành công", status = 200) =>
+  res.status(status).json({ success: true, message: msg, data });
+const fail = (res, msg = "Lỗi server", status = 500) =>
+  res.status(status).json({ success: false, message: msg });
+
+/* ═══════════════════════════════════════
+   ROUTE — Tuyến lớn
+═══════════════════════════════════════ */
+
+/** GET /api/admin/check/routes */
+module.exports.getRoutes = async (req, res) => {
+  try {
+    const routes = await Route.find()
+      .populate("start_id", "name province")
+      .populate("stop_id", "name province")
+      .sort({ created_at: -1 })
+      .lean();
+    return ok(res, routes);
+  } catch (e) {
+    console.error("getRoutes:", e);
+    return fail(res, e.message);
+  }
+};
+
+/** PATCH /api/admin/check/routes/:id/toggle */
+module.exports.toggleRoute = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return fail(res, "ID không hợp lệ", 400);
+
+    const route = await Route.findById(id);
+    if (!route) return fail(res, "Không tìm thấy tuyến đường", 404);
+    route.is_active = !route.is_active;
+    await route.save();
+    return ok(res, { _id: route._id, is_active: route.is_active });
+  } catch (e) {
+    console.error("toggleRoute:", e);
+    return fail(res, e.message);
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════
+   HELPER: dùng aggregation để lookup Stop qua RouteStop
+   Không cần mongoose populate — truy vấn thẳng MongoDB
+ 
+   Chuỗi lookup:
+   RouteSegmentPrice.start_id (ObjectId)
+     → routestops._id
+       → routestops.stop_id (ObjectId)
+         → stops._id { name, province }
+═══════════════════════════════════════════════════════════ */
+async function getPricesWithNames(routeId) {
+  const oid = toOid(routeId);
+
+  const result = await RouteSegmentPrice.aggregate([
+    // Bước 1: lọc theo route
+    { $match: { route_id: oid } },
+
+    // Bước 2: lookup RouteStop cho start_id
+    {
+      $lookup: {
+        from: "routestops",       // tên collection trong MongoDB (thường là lowercase + s)
+        localField: "start_id",
+        foreignField: "_id",
+        as: "_startRouteStop",
+      },
+    },
+    { $unwind: { path: "$_startRouteStop", preserveNullAndEmptyArrays: true } },
+
+    // Bước 3: lookup Stop từ _startRouteStop.stop_id
+    {
+      $lookup: {
+        from: "stops",
+        localField: "_startRouteStop.stop_id",
+        foreignField: "_id",
+        as: "_startStop",
+      },
+    },
+    { $unwind: { path: "$_startStop", preserveNullAndEmptyArrays: true } },
+
+    // Bước 4: lookup RouteStop cho end_id
+    {
+      $lookup: {
+        from: "routestops",
+        localField: "end_id",
+        foreignField: "_id",
+        as: "_endRouteStop",
+      },
+    },
+    { $unwind: { path: "$_endRouteStop", preserveNullAndEmptyArrays: true } },
+
+    // Bước 5: lookup Stop từ _endRouteStop.stop_id
+    {
+      $lookup: {
+        from: "stops",
+        localField: "_endRouteStop.stop_id",
+        foreignField: "_id",
+        as: "_endStop",
+      },
+    },
+    { $unwind: { path: "$_endStop", preserveNullAndEmptyArrays: true } },
+
+    // Bước 6: lookup BusType
+    {
+      $lookup: {
+        from: "bustypes",
+        localField: "bus_type_id",
+        foreignField: "_id",
+        as: "_busType",
+      },
+    },
+    { $unwind: { path: "$_busType", preserveNullAndEmptyArrays: true } },
+
+    // Bước 7: project kết quả gọn
+    {
+      $project: {
+        _id: 1,
+        route_id: 1,
+        base_price: 1,
+        is_active: 1,
+        created_at: 1,
+        start_id: {
+          _id: "$_startRouteStop._id",
+          stop_order: "$_startRouteStop.stop_order",
+          name: "$_startStop.name",
+          province: "$_startStop.province",
+        },
+        end_id: {
+          _id: "$_endRouteStop._id",
+          stop_order: "$_endRouteStop.stop_order",
+          name: "$_endStop.name",
+          province: "$_endStop.province",
+        },
+        bus_type_id: {
+          _id: "$_busType._id",
+          name: "$_busType.name",
+        },
+      },
+    },
+
+    { $sort: { base_price: 1 } },
+  ]);
+
+  return result;
+}
+
+/* ═══════════════════════════════════════
+   ROUTE SEGMENT PRICE — Giá chặng
+═══════════════════════════════════════ */
+
+/** GET /api/admin/check/routes/:routeId/prices */
+module.exports.getPrices = async (req, res) => {
+  try {
+    const { routeId } = req.params;
+    if (!isValidId(routeId)) return fail(res, "routeId không hợp lệ", 400);
+
+    const prices = await getPricesWithNames(routeId);
+    return ok(res, prices);
+  } catch (e) {
+    console.error("getPrices:", e);
+    return fail(res, e.message);
+  }
+};
+
+/** GET /api/admin/check/routes/:routeId/stops
+ *  Danh sách RouteStop của tuyến kèm tên Stop
+ */
+module.exports.getRouteStops = async (req, res) => {
+  try {
+    const { routeId } = req.params;
+    if (!isValidId(routeId)) return fail(res, "routeId không hợp lệ", 400);
+
+    const stops = await RouteStop.aggregate([
+      { $match: { route_id: toOid(routeId) } },
+      {
+        $lookup: {
+          from: "stops",
+          localField: "stop_id",
+          foreignField: "_id",
+          as: "_stop",
+        },
+      },
+      { $unwind: { path: "$_stop", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1,
+          stop_order: 1,
+          estimated_time: 1,
+          is_pickup: 1,
+          name: "$_stop.name",
+          province: "$_stop.province",
+          stop_id: "$_stop._id",
+        },
+      },
+      { $sort: { stop_order: 1 } },
+    ]);
+
+    return ok(res, stops);
+  } catch (e) {
+    console.error("getRouteStops:", e);
+    return fail(res, e.message);
+  }
+};
+
+/** POST /api/admin/check/routes/:routeId/prices */
+module.exports.createPrice = async (req, res) => {
+  try {
+    const { routeId } = req.params;
+    if (!isValidId(routeId)) return fail(res, "routeId không hợp lệ", 400);
+
+    const { start_id, end_id, bus_type_id, base_price } = req.body;
+    if (!start_id || !end_id || base_price === undefined)
+      return fail(res, "start_id, end_id và base_price là bắt buộc", 400);
+    if (!isValidId(start_id) || !isValidId(end_id))
+      return fail(res, "start_id hoặc end_id không hợp lệ", 400);
+    if (Number(base_price) < 0) return fail(res, "Giá không được âm", 400);
+
+    await RouteSegmentPrice.create({
+      route_id: routeId,
+      start_id,
+      end_id,
+      bus_type_id: bus_type_id ?? null,
+      base_price: Number(base_price),
+      is_active: true,
+    });
+
+    // Trả về toàn bộ prices đã resolve tên
+    const prices = await getPricesWithNames(routeId);
+    return ok(res, prices, "Tạo giá chặng thành công", 201);
+  } catch (e) {
+    console.error("createPrice:", e);
+    return fail(res, e.message);
+  }
+};
+
+/** PATCH /api/admin/check/prices/:id */
+module.exports.updatePrice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return fail(res, "ID không hợp lệ", 400);
+
+    const price = await RouteSegmentPrice.findById(id);
+    if (!price) return fail(res, "Không tìm thấy giá chặng", 404);
+
+    const { base_price, is_active, start_id, end_id, bus_type_id } = req.body;
+    if (base_price !== undefined) {
+      if (Number(base_price) < 0) return fail(res, "Giá không được âm", 400);
+      price.base_price = Number(base_price);
+    }
+    if (is_active !== undefined) price.is_active = is_active;
+    if (start_id !== undefined) price.start_id = start_id;
+    if (end_id !== undefined) price.end_id = end_id;
+    if (bus_type_id !== undefined) price.bus_type_id = bus_type_id || null;
+    await price.save();
+
+    const prices = await getPricesWithNames(String(price.route_id));
+    const updated = prices.find(p => String(p._id) === id) ?? prices[0];
+    return ok(res, updated, "Cập nhật giá chặng thành công");
+  } catch (e) {
+    console.error("updatePrice:", e);
+    return fail(res, e.message);
+  }
+};
+
+/** DELETE /api/admin/check/prices/:id */
+module.exports.deletePrice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return fail(res, "ID không hợp lệ", 400);
+    const price = await RouteSegmentPrice.findByIdAndDelete(id);
+    if (!price) return fail(res, "Không tìm thấy giá chặng", 404);
+    return ok(res, null, "Xoá giá chặng thành công");
+  } catch (e) {
+    console.error("deletePrice:", e);
+    return fail(res, e.message);
+  }
+};
+// revenue
+/* ════════════════════════════════════════════════════════════
+   GET /api/admin/check/revenue?type=week|month|year&year=2025&month=2
+   Trả về doanh thu theo BookingOrder có order_status = "PAID"
+════════════════════════════════════════════════════════════ */
+module.exports.getRevenue = async (req, res) => {
+  try {
+    const { type = "month", year, month } = req.query;
+
+    const selectedYear = parseInt(year) || new Date().getFullYear();
+    const selectedMonth = parseInt(month) || new Date().getMonth() + 1;
+
+    let matchStage = {};
+    let groupStage = {};
+    let projectStage = {};
+
+    if (type === "week") {
+      // Lọc theo tháng + năm cụ thể, group theo từng ngày
+      const startDate = new Date(selectedYear, selectedMonth - 1, 1);
+      const endDate = new Date(selectedYear, selectedMonth, 1);
+
+      matchStage = {
+        order_status: "PAID",
+        created_at: { $gte: startDate, $lt: endDate },
+      };
+      groupStage = {
+        _id: {
+          year: { $year: "$created_at" },
+          month: { $month: "$created_at" },
+          day: { $dayOfMonth: "$created_at" },
+        },
+        bookings: { $sum: "$total_price" },
+        count: { $sum: 1 },
+      };
+      projectStage = {
+        _id: 0,
+        date: {
+          $dateToString: {
+            format: "%Y-%m-%d",
+            date: {
+              $dateFromParts: {
+                year: "$_id.year",
+                month: "$_id.month",
+                day: "$_id.day",
+              },
+            },
+          },
+        },
+        label: {
+          $concat: [
+            { $toString: "$_id.day" },
+            "/",
+            { $toString: "$_id.month" },
+          ],
+        },
+        bookings: 1,
+        parcels: { $literal: 0 }, // chưa có parcel model
+        count: 1,
+      };
+    } else if (type === "month") {
+      // Group theo tháng trong năm
+      const startDate = new Date(selectedYear, 0, 1);
+      const endDate = new Date(selectedYear + 1, 0, 1);
+
+      matchStage = {
+        order_status: "PAID",
+        created_at: { $gte: startDate, $lt: endDate },
+      };
+      groupStage = {
+        _id: {
+          year: { $year: "$created_at" },
+          month: { $month: "$created_at" },
+        },
+        bookings: { $sum: "$total_price" },
+        count: { $sum: 1 },
+      };
+      projectStage = {
+        _id: 0,
+        date: {
+          $concat: [
+            { $toString: "$_id.year" },
+            "-",
+            {
+              $cond: [
+                { $lt: ["$_id.month", 10] },
+                { $concat: ["0", { $toString: "$_id.month" }] },
+                { $toString: "$_id.month" },
+              ],
+            },
+          ],
+        },
+        label: { $concat: ["Tháng ", { $toString: "$_id.month" }] },
+        fullDate: { $concat: ["Tháng ", { $toString: "$_id.month" }, " năm ", { $toString: "$_id.year" }] },
+        bookings: 1,
+        parcels: { $literal: 0 },
+        count: 1,
+        _month: "$_id.month",
+      };
+    } else {
+      // Group theo năm (tất cả năm có data)
+      matchStage = { order_status: "PAID" };
+      groupStage = {
+        _id: { year: { $year: "$created_at" } },
+        bookings: { $sum: "$total_price" },
+        count: { $sum: 1 },
+      };
+      projectStage = {
+        _id: 0,
+        date: { $toString: "$_id.year" },
+        label: { $toString: "$_id.year" },
+        fullDate: { $concat: ["Năm ", { $toString: "$_id.year" }] },
+        bookings: 1,
+        parcels: { $literal: 0 },
+        count: 1,
+        _year: "$_id.year",
+      };
+    }
+
+    const pipeline = [
+      { $match: matchStage },
+      { $group: groupStage },
+      { $project: projectStage },
+      { $sort: { date: 1 } },
+    ];
+
+    const raw = await BookingOrder.aggregate(pipeline);
+
+    // Tính tăng trưởng so với kỳ trước
+    const data = raw.map((item, idx) => {
+      const prev = raw[idx - 1];
+      let growth = 0;
+      if (prev && prev.bookings > 0) {
+        growth = Math.round(((item.bookings - prev.bookings) / prev.bookings) * 100);
+      }
+      return { ...item, growth };
+    });
+
+    // Tổng hợp
+    const totalBookings = data.reduce((s, d) => s + d.bookings, 0);
+    const totalParcels = data.reduce((s, d) => s + d.parcels, 0);
+    const grandTotal = totalBookings + totalParcels;
+
+    return ok(res, {
+      type,
+      year: selectedYear,
+      month: selectedMonth,
+      data,
+      summary: {
+        totalBookings,
+        totalParcels,
+        grandTotal,
+        bookingPercent: grandTotal > 0 ? Math.round((totalBookings / grandTotal) * 100) : 0,
+        count: data.reduce((s, d) => s + (d.count || 0), 0),
+      },
+    });
+  } catch (e) {
+    console.error("getRevenue:", e);
+    return fail(res, e.message);
+  }
+};
+//busType //////////////
+/** GET /api/admin/check/busTypes */
+module.exports.getBusTypes = async (req, res) => {
+  try {
+    const { search, category, isActive } = req.query;
+    const filter = {};
+    if (search) filter.name = { $regex: search, $options: "i" };
+    if (category) filter.category = category;
+    if (isActive !== undefined && isActive !== "") filter.isActive = isActive === "true";
+
+    const list = await BusType.find(filter).sort({ createdAt: -1 }).lean();
+    return ok(res, list);
+  } catch (e) { return fail(res, e.message); }
+};
+
+/** POST /api/admin/check/busTypes */
+module.exports.createBusType = async (req, res) => {
+  try {
+    const { name, description, category, amenities, isActive } = req.body;
+    if (!name?.trim()) return fail(res, "Tên loại xe là bắt buộc", 400);
+    if (!category) return fail(res, "Danh mục là bắt buộc", 400);
+    if (!CATEGORIES.includes(category))
+      return fail(res, `Danh mục phải là: ${CATEGORIES.join(", ")}`, 400);
+
+    const existed = await BusType.findOne({ name: name.trim() });
+    if (existed) return fail(res, "Tên loại xe đã tồn tại", 400);
+
+    const bt = await BusType.create({
+      name: name.trim(),
+      description: description?.trim() ?? "",
+      category,
+      amenities: Array.isArray(amenities) ? amenities.filter(a => AMENITIES.includes(a)) : [],
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+    });
+    return ok(res, bt, "Tạo loại xe thành công", 201);
+  } catch (e) { return fail(res, e.message); }
+};
+
+/** PATCH /api/admin/check/busTypes/:id */
+module.exports.updateBusType = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return fail(res, "ID không hợp lệ", 400);
+    const bt = await BusType.findById(id);
+    if (!bt) return fail(res, "Không tìm thấy loại xe", 404);
+
+    const { name, description, category, amenities, isActive } = req.body;
+    if (name !== undefined) {
+      if (!name.trim()) return fail(res, "Tên không được để trống", 400);
+      const dup = await BusType.findOne({ name: name.trim(), _id: { $ne: id } });
+      if (dup) return fail(res, "Tên loại xe đã tồn tại", 400);
+      bt.name = name.trim();
+    }
+    if (description !== undefined) bt.description = description.trim();
+    if (category !== undefined) {
+      if (!CATEGORIES.includes(category))
+        return fail(res, `Danh mục phải là: ${CATEGORIES.join(", ")}`, 400);
+      bt.category = category;
+    }
+    if (amenities !== undefined)
+      bt.amenities = Array.isArray(amenities) ? amenities.filter(a => AMENITIES.includes(a)) : [];
+    if (isActive !== undefined) bt.isActive = Boolean(isActive);
+
+    await bt.save();
+    return ok(res, bt.toObject(), "Cập nhật loại xe thành công");
+  } catch (e) { return fail(res, e.message); }
+};
+
+/** PATCH /api/admin/check/busTypes/:id/toggle */
+module.exports.toggleBusType = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return fail(res, "ID không hợp lệ", 400);
+    const bt = await BusType.findById(id);
+    if (!bt) return fail(res, "Không tìm thấy loại xe", 404);
+    bt.isActive = !bt.isActive;
+    await bt.save();
+    return ok(res, { _id: bt._id, isActive: bt.isActive },
+      `Loại xe đã ${bt.isActive ? "kích hoạt" : "tắt"}`);
+  } catch (e) { return fail(res, e.message); }
+};
+
+/** DELETE /api/admin/check/busTypes/:id */
+module.exports.deleteBusType = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return fail(res, "ID không hợp lệ", 400);
+    const bt = await BusType.findByIdAndDelete(id);
+    if (!bt) return fail(res, "Không tìm thấy loại xe", 404);
+    return ok(res, null, "Xoá loại xe thành công");
+  } catch (e) { return fail(res, e.message); }
+};

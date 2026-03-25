@@ -8,24 +8,20 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 var cors = require("cors");
 const ROUTES = require("./src/router/registry.routes");
-// const whitelist = ["http://localhost:3000", "http://localhost:5173"];
+const whitelist = ["http://localhost:3000", "http://localhost:5173"];
 
-// app.use(
-//   cors({
-//     origin(origin, callback) {
-//       if (!origin || whitelist.includes(origin)) {
-//         callback(null, true);
-//       } else {
-//         callback(new Error("Not allowed by CORS"));
-//       }
-//     },
-//     credentials: true,
-//   })
-// );
-app.use(cors({
-  origin: "*",
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || whitelist.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
 // cách router để có thể hoạt động được
 ROUTES.forEach((route) => {
   if (route.middlewares && route.middlewares.length > 0) {
