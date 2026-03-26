@@ -2101,7 +2101,7 @@ module.exports.getAvailableAssistantDriver = async (req, res) => {
   try {
     const { shift_start, shift_end, start_stop_id } = req.query;
 
-    const assistantRole = await Role.findOne({ name: "ASSISTANT" }).lean();
+    const assistantRole = await Role.findOne({ name: "BUS_ASSISTANT" }).lean();
     if (!assistantRole) {
       return res.status(404).json({ message: "Không tìm thấy role ASSISTANT" });
     }
@@ -2249,6 +2249,45 @@ module.exports.getAvailableAssistantDriver = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
+
+// Hàm tạo hàng loạt Trip
+module.exports.createSeriesOfTrips = async (req,res) => {
+  try {
+    const {route_id,departure_hour,start_date, end_date} = req.body;
+    if(!route_id || !departure_hour || !start_date || !end_date ){
+      return res.status(404).json({ message: "Các trường là bắt buộc" });
+    };
+     const route = await Route.findById(route_id);
+    if (!route) {
+      return res.status(404).json({ message: "Tuyến không tồn tại" });
+    };
+    const start = new Date(start_date);
+    const end = new Date(end_date);
+     if (start > end) {
+      return res.status(400).json({ message: "Ngày bắt đầu phải trước ngày kết thúc" });
+    };
+    const [hours, minutes] = departure_hour.split(":").map(Number);
+    const duration = route.estimated_duration; // số giờ từ route
+    const trips = [];
+     for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 24 * 60 * 60 * 1000)) {
+      const departure = new Date(d);
+      departure.setUTCHours(hours - 7, minutes, 0, 0);
+      const arrival = new Date(departure.getTime() + duration * 60 * 60 * 1000);
+      trips.push({
+        route_id,
+        departure_time: departure,
+        arrival_time: arrival,
+        scheduled_duration: duration * 60,
+        status: "UNASSIGNED",
+      });
+    };
+    const tripsCreated = await Trip.insertMany(trips);
+    return res.status(201).json({message: `Tạo thành công ${tripsCreated.length} chuyến`,});
+  } catch (error) {
+    console.log("ERROR",error.message);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
 // Hàm tạo Trip;
 module.exports.createTrips = async (req, res) => {
   try {
@@ -2270,7 +2309,7 @@ module.exports.createTrips = async (req, res) => {
       !arrival_time ||
       !scheduled_duration
     ) {
-      return res.status(400).json({ message: "Các trường là bắt buộc" });
+      return res.status(404).json({ message: "Các trường là bắt buộc" });
     };
     if (new Date(departure_time) <= new Date(Date.now())) {
       return res.status(400).json({
@@ -2376,8 +2415,8 @@ module.exports.getAllTrips = async (req, res) => {
         .populate({
           path: "route_id",
           populate: [
-            { path: "start_id", select: "name" },
-            { path: "stop_id", select: "name" },
+            { path: "start_id", select: "_id name" },
+            { path: "stop_id", select: "_id name" },
           ],
         })
         .populate({

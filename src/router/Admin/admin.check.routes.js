@@ -73,6 +73,7 @@ router.get("/getBuses", adminController.getAllBuses);
 router.get("/getAvailableDrivers", adminController.getAvailableDrivers);
 router.get("/getAvailableAssistant", adminController.getAvailableAssistantDriver);
 router.post("/trips", adminController.createTrips);
+router.post("/seriesOfTrips", adminController.createSeriesOfTrips);
 router.get("/getDurationHandicraft", adminController.getDurationOfHandicraft);
 router.get("/trips", adminController.getAllTrips);
 router.get("/trips/:id", adminController.getTripById);

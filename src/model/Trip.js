@@ -11,7 +11,7 @@ const TripSchema = new mongoose.Schema(
     bus_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Bus",
-      required: true,
+      required: false,
     },
     // người lái
     drivers: [
@@ -19,7 +19,7 @@ const TripSchema = new mongoose.Schema(
         driver_id: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
-          required: true,
+          required: false,
         },
         // thời điểm dự kiến bắt đầu ca lái
         shift_start: {
@@ -91,7 +91,7 @@ const TripSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED"],
+      enum: ["SCHEDULED", "RUNNING", "FINISHED", "CANCELLED","UNASSIGNED"],
       default: "SCHEDULED",
     },
     // kiểm soát thể tích của hàng hóa
