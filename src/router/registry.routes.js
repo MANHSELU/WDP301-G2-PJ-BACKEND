@@ -11,10 +11,17 @@ const commonCheck = require("./Common/common.check.routes");
 const aiCheckV2 = require("./Ai/ai.checkroutes.js");
 const aiNotCheckV2 = require("./Ai/ai.notcheckV2.routes.js");
 const aiNotCheck = require("./Ai/ai.notcheckroutes.js")
+const payment = require("./../router/payment/payment.routes.js")
+const RECEPTIONISTCheck = require("./../router/Receptionist/receptionist.check.routes.js")
+
 module.exports = [
   {
     prefix: "/api/customer/notcheck",
     router: clientNotcheck,
+  },
+  {
+    prefix: "/api/payment",
+    router: payment,
   },
   {
     prefix: "/api/customer/check",
@@ -56,6 +63,15 @@ module.exports = [
     router: adminCheck
   },
   {
+    prefix: "/api/receptionist/check",
+    middlewares: [
+      checkClient.checkaccount,
+      checkClient.checkRole(ROLES.RECEPTIONIST),
+    ],
+
+    router: RECEPTIONISTCheck
+  },
+  {
     prefix: "/api/admin/notcheck",
     router: adminNotCheck
   },
@@ -64,14 +80,14 @@ module.exports = [
     router: aiNotCheck
   },
   {
-  prefix: "/api/ai/notcheck/v2",
-  router: aiNotCheckV2
-},
-{
-  prefix: "/api/ai/check",
-  middlewares: [checkClient.checkaccount],
-  router: aiCheckV2
-},
+    prefix: "/api/ai/notcheck/v2",
+    router: aiNotCheckV2
+  },
+  {
+    prefix: "/api/ai/check",
+    middlewares: [checkClient.checkaccount],
+    router: aiCheckV2
+  },
   {
     prefix: "/api/common/check",
     middlewares: [

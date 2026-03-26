@@ -1489,8 +1489,8 @@ module.exports.getAllBusType = async (req, res) => {
 // Hàm tạo xe
 module.exports.createBus = async (req, res) => {
   try {
-    const { license_plate, bus_type_id, seat_layout } = req.body;
-    if (!license_plate || !bus_type_id || !seat_layout) {
+    const { license_plate, bus_type_id,current_stop_id, seat_layout } = req.body;
+    if (!license_plate || !bus_type_id || !current_stop_id || !seat_layout) {
       return res.status(404).json({ message: "Các trường là bắt buộc" });
     }
     const bus = await Bus.findOne({ license_plate });
@@ -1500,6 +1500,7 @@ module.exports.createBus = async (req, res) => {
     const newBus = await Bus.create({
       license_plate,
       bus_type_id,
+      current_stop_id,
       seat_layout,
     });
     await newBus.save();
@@ -1511,7 +1512,7 @@ module.exports.createBus = async (req, res) => {
 // Hàm lấy tất cả các điểm stop
 module.exports.getAllStops = async (req, res) => {
   try {
-    const searchStops = await Stops.find({is_active : true}).select("name province is_active");
+    const searchStops = await Stops.find({ is_active: true }).select("name province is_active");
     return res.status(200).json(searchStops);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -1705,7 +1706,7 @@ module.exports.createRoutes = async (req, res) => {
 module.exports.getGeoOfStopLocation = async (req, res) => {
   console.log("chạy vào lấy vị trí");
   try {
-    const { stop_id, location_name, address} = req.body;
+    const { stop_id, location_name, address } = req.body;
     if (!location_name || !address || !stop_id) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
     };
@@ -1715,9 +1716,11 @@ module.exports.getGeoOfStopLocation = async (req, res) => {
     if (!coordinates) {
       return res.status(404).json({ message: "Không tìm thấy địa điểm" });
     }
-      return res.status(200).json({ coordinates });
+    return res.status(200).json({ coordinates });
   } catch (error) {
-      return res.status(500).json({ message: error.message });
+    console.error("FULL ERROR:", error);
+    return res.status(500).json({ message: error.message });
+
   }
 };
 
@@ -1725,8 +1728,8 @@ module.exports.getGeoOfStopLocation = async (req, res) => {
 // Hàm tạo Stop Location;
 module.exports.createStopLocation = async (req, res) => {
   try {
-    const { stop_id, location_name, address,status, location, location_type } = req.body;
-    if (!stop_id || !location_name || !address ||!status ||!location || !location_type) {
+    const { stop_id, location_name, address, status, location, location_type } = req.body;
+    if (!stop_id || !location_name || !address || !status || !location || !location_type) {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
     const stopLocation = await StopLocation.findOne({ location_name });
@@ -1755,7 +1758,7 @@ module.exports.getAllRoutes = async (req, res) => {
   try {
     const allRoutes = await Route.find()
       .select("start_id stop_id estimated_duration")
-      .populate("start_id", "name") 
+      .populate("start_id", "name")
       .populate("stop_id", "name");
     return res.status(200).json(allRoutes);
   } catch (error) {
@@ -1764,6 +1767,7 @@ module.exports.getAllRoutes = async (req, res) => {
 };
 // Hàm lấy tất cả xe đã check conflict lịch
 module.exports.getAllBuses = async (req, res) => {
+  console.log("chạy vào allbus")
   try {
     const { shift_start, shift_end, start_stop_id } = req.query;
     if (!shift_start || !shift_end || !start_stop_id) {
@@ -2788,80 +2792,8 @@ module.exports.searchStopsTimeTable = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
-// Hàm lấy tất cả Stop ko theo status
-module.exports.getAllStopsNotFilterByStatus = async (req,res) =>{
-  try {
-const allStop = await Stop.find()
-  .select("name province is_active stopLocation_id")
-  .populate("stopLocation_id", "location_name");
-      return res.status(200).json(allStop);
-  } catch (error) {
-    console.log("errror la`", error.message)
-    return res.status(500).json({ message: error.message });
-  }
-}
 
-// Hàm update status của Stop
-module.exports.updateStopStatus = async (req,res) =>{
-  try {
-    const {stop_id} = req.query;
-    if(!stop_id){
-      return res.status(404).json({message: "Các trường là bắt buộc"})
-    }
-    const stop = await Stop.findById(stop_id);
-    stop.is_active = !stop.is_active;
-    await stop.save();
-    return res.status(200).json({message: "Cập nhật trạng thái thành công"});
-  } catch (error) {
-    console.log("Error", error.message);
-    return res.status(500).json({ message: error.message });
-  }
-} 
-// Hàm update stopLocation chính của Stop 
-module.exports.updateMainStopLocationOfStops = async (req,res) =>{
-  try {
-    const {stop_id,newStopLocation_id} = req.query;
-    if(!stop_id || !newStopLocation_id) {
-      return res.status(404).json({message: "Các trường là bắt buộc"});
-    };
-    const stop = await Stop.findById(stop_id);
-    stop.stopLocation_id = newStopLocation_id;
-    await stop.save();
-    return res.status(204 ).json({message: "Cập nhật trạng thái thành công"});
-  } catch (error) {
-    console.log("Error", error.message);
-      return res.status(500).json({ message: error.message });
-  }
-}
-// Hàm lấy tất cả StopLocation của 1 Stop
-module.exports.getAllStopLocationOfStop = async (req,res) =>{
-  try {
-    const {stop_id} = req.query;
-    if(!stop_id){
-      return res.status(404).json({message: "Các trường là bắt buộc"})
-    }
-    const stopLocation = await StopLocation.find({stop_id : stop_id}).select("location_name address is_active");
-    return res.status(200).json(stopLocation);
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-}
-// Hàm lấy update Status của StopLocation
-module.exports.updateStopLocationStatus = async (req,res) =>{
-  try {
-    const {stopLocation_id} = req.query;
-    if(!stopLocation_id){
-      return res.status(404).json({message: "Các trường là bắt buộc"})
-    }
-    const stopLocation = await StopLocation.findById(stopLocation_id);
-    stopLocation.is_active = !stopLocation.is_active;
-    await stopLocation.save();
-    return res.status(200).json({message: "Cập nhật trạng thái thành công"});
-  } catch (error) {
-    console.log("Error", error.message);
-    return res.status(500).json({ message: error.message });
-  }
-} 
+// hàm của bình 
 module.exports.viewBuses = async (req, res) => {
   try {
     const {
@@ -2942,3 +2874,77 @@ module.exports.viewBuses = async (req, res) => {
     });
   }
 };
+// Hàm lấy tất cả Stop ko theo status
+module.exports.getAllStopsNotFilterByStatus = async (req, res) => {
+  try {
+    const allStop = await Stop.find()
+      .select("name province is_active stopLocation_id")
+      .populate("stopLocation_id", "location_name");
+    return res.status(200).json(allStop);
+  } catch (error) {
+    console.log("errror la`", error.message)
+    return res.status(500).json({ message: error.message });
+  }
+}
+
+// Hàm update status của Stop
+module.exports.updateStopStatus = async (req, res) => {
+  try {
+    const { stop_id } = req.query;
+    if (!stop_id) {
+      return res.status(404).json({ message: "Các trường là bắt buộc" })
+    }
+    const stop = await Stop.findById(stop_id);
+    stop.is_active = !stop.is_active;
+    await stop.save();
+    return res.status(200).json({ message: "Cập nhật trạng thái thành công" });
+  } catch (error) {
+    console.log("Error", error.message);
+    return res.status(500).json({ message: error.message });
+  }
+}
+// Hàm update stopLocation chính của Stop 
+module.exports.updateMainStopLocationOfStops = async (req, res) => {
+  try {
+    const { stop_id, newStopLocation_id } = req.query;
+    if (!stop_id || !newStopLocation_id) {
+      return res.status(404).json({ message: "Các trường là bắt buộc" });
+    };
+    const stop = await Stop.findById(stop_id);
+    stop.stopLocation_id = newStopLocation_id;
+    await stop.save();
+    return res.status(204).json({ message: "Cập nhật trạng thái thành công" });
+  } catch (error) {
+    console.log("Error", error.message);
+    return res.status(500).json({ message: error.message });
+  }
+}
+// Hàm lấy tất cả StopLocation của 1 Stop
+module.exports.getAllStopLocationOfStop = async (req, res) => {
+  try {
+    const { stop_id } = req.query;
+    if (!stop_id) {
+      return res.status(404).json({ message: "Các trường là bắt buộc" })
+    }
+    const stopLocation = await StopLocation.find({ stop_id: stop_id }).select("location_name address is_active");
+    return res.status(200).json(stopLocation);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
+// Hàm lấy update Status của StopLocation
+module.exports.updateStopLocationStatus = async (req, res) => {
+  try {
+    const { stopLocation_id } = req.query;
+    if (!stopLocation_id) {
+      return res.status(404).json({ message: "Các trường là bắt buộc" })
+    }
+    const stopLocation = await StopLocation.findById(stopLocation_id);
+    stopLocation.is_active = !stopLocation.is_active;
+    await stopLocation.save();
+    return res.status(200).json({ message: "Cập nhật trạng thái thành công" });
+  } catch (error) {
+    console.log("Error", error.message);
+    return res.status(500).json({ message: error.message });
+  }
+} 
