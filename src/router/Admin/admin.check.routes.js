@@ -97,4 +97,11 @@ router.get("/busTypes", adminController.getBusTypes);
 router.post("/busTypes", adminController.createBusType);
 router.patch("/busTypes/:id", adminController.updateBusType);
 router.patch("/busTypes/:id/toggle", adminController.toggleBusType);
+
+// giá đặt hàng 
+router.get("/pricing", adminController.getAllPricing);
+router.post("/pricing", adminController.createPricing);
+router.patch("/pricing/:id", adminController.updatePricing);
+router.delete("/pricing/:id", adminController.deletePricing);
+
 module.exports = router;
