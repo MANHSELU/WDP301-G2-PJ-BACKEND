@@ -2371,7 +2371,7 @@ module.exports.createSeriesOfTrips = async (req,res) => {
       });
     };
     const tripsCreated = await Trip.insertMany(trips);
-    return res.status(201).json({message: `Tạo thành công ${tripsCreated.length} chuyến`,});
+    return res.status(201).json({message: `Tạo thành công ${tripsCreated.length} chuyến đi`,});
   } catch (error) {
     console.log("ERROR",error.message);
     return res.status(500).json({ message: "Lỗi server" });
