@@ -17,7 +17,7 @@ const Stops = require("./../../model/Stops")
 const Parcel = require("../../model/Parcel")
 const TripReview = require("./../../model/TripReview");
 const PaymentTransaction = require("./../../model/PaymentTransaction")
-
+const PricingConfig = require("./../../model/PricingConfig")
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -748,7 +748,7 @@ module.exports.getSearch = async (req, res) => {
       // ── 4. Tìm trip có ngày xe đến startStop (giờ VN) = ngày khách chọn ──
       const trips = await Trip.find({
         route_id: startStop.route_id,
-        status: { $ne: "CANCELLED" },
+        status: { $ne: "CANCELLED", $ne: "FINISHED" },
       }).lean();
 
       const hasMatchingTrip = trips.some((trip) => {
@@ -1594,6 +1594,7 @@ module.exports.createBooking = async (req, res) => {
       passenger_phone,
       start_info,   // { city, specific_location }
       end_info,     // { city, specific_location }
+      passengers = [],
     } = req.body;
 
     /* ════════════════════════════════════
@@ -1705,6 +1706,17 @@ module.exports.createBooking = async (req, res) => {
           total_price,
           passenger_name: passenger_name.trim(),
           passenger_phone: passenger_phone.trim(),
+          passengers: passengers.length > 0
+            ? passengers.map(p => ({
+              seat_label: p.seat_label,
+              name: p.name.trim(),
+              phone: p.phone.trim(),
+            }))
+            : seat_labels.map(seat => ({
+              seat_label: seat,
+              name: passenger_name.trim(),
+              phone: passenger_phone.trim(),
+            })),
         },
       ],
       { session }
@@ -2011,7 +2023,7 @@ module.exports.getRoutesToday = async (req, res) => {
 module.exports.getFinishedTripBookingHistory = async (req, res) => {
   try {
     const user_id = res.locals.user.id;
-    const orderHistory = await BookingOrder.find({ user_id, order_status:"PAID" })
+    const orderHistory = await BookingOrder.find({ user_id, order_status: "PAID" })
       .populate({
         path: "trip_id",
         match: { status: "FINISHED" },
@@ -2072,7 +2084,7 @@ module.exports.reviewTrip = async (req, res) => {
       return res.status(400).json({ message: "Bạn đã đánh giá trước đó" });
     };
     if (rating < 1 || rating > 5) {
-    return res.status(400).json({ message: "Đánh giá phải từ 1 sao đến 5 sao" });
+      return res.status(400).json({ message: "Đánh giá phải từ 1 sao đến 5 sao" });
     };
     const newReview = await TripReview.create({
       booking_id,
@@ -2955,5 +2967,42 @@ module.exports.cancelOrder = async (req, res) => {
   } catch (err) {
     console.error("[cancelOrder]", err);
     return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+//getActivePricingPublic
+const ok = (res, data, msg = "Thành công", status = 200) =>
+  res.status(status).json({ success: true, message: msg, data });
+const fail = (res, msg = "Lỗi server", status = 500) =>
+  res.status(status).json({ success: false, message: msg });
+
+async function getActivePricing() {
+  const now = new Date();
+  const holiday = await PricingConfig.findOne({
+    type: "HOLIDAY", isActive: true,
+    effective_from: { $lte: now }, effective_to: { $gte: now },
+  }).sort({ effective_from: -1 }).lean();
+  if (holiday) return holiday;
+
+  const def = await PricingConfig.findOne({ type: "DEFAULT", isActive: true })
+    .sort({ created_at: -1 }).lean();
+  return def ?? FALLBACK_PRICING;
+}
+
+function calcVolumetric(l, w, h, divisor = 5000) {
+  if (!l || !w || !h) return { volume_m3: null, volumetric_weight_kg: null };
+  const cm3 = l * w * h;
+  return {
+    volume_m3: +(cm3 / 1_000_000).toFixed(4),
+    volumetric_weight_kg: +(cm3 / divisor).toFixed(2),
+  };
+}
+module.exports.getActivePricingPublic = async (req, res) => {
+  console.log("chạy vào lấy tiền và lấy kg")
+  try {
+    const pricing = await getActivePricing();
+    return ok(res, pricing);
+  } catch (e) {
+    console.log("lỗi chương trình")
+    return fail(res, e.message);
   }
 };

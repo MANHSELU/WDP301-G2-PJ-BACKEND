@@ -9,7 +9,6 @@ const mongoose = require("mongoose");
  *  OTHER      – Hàng cồng kềnh khác            → max(kg, thể tích) × đơn giá
  */
 const ITEM_CATEGORY = ["DOCUMENT", "PARCEL", "BICYCLE", "MOTORCYCLE", "OTHER"];
-
 /**
  * PHÂN LOẠI KÍCH THƯỚC (bắt buộc khi BICYCLE / MOTORCYCLE / OTHER)
  *  SMALL  – xe đạp mini / xe máy ≤50cc / xe điện nhỏ
@@ -68,6 +67,15 @@ const ParcelSchema = new mongoose.Schema(
 
         parcel_type: { type: String, trim: true }, // dễ vỡ / thực phẩm...
 
+        // /**
+        // * Lưu lại PricingConfig đã dùng để tính giá tại thời điểm tạo đơn.
+        // * Giúp audit lại giá sau này dù config thay đổi.
+        // */
+        // pricing_config_id: {
+        //     type: mongoose.Schema.Types.ObjectId,
+        //     ref: "PricingConfig",
+        //     default: null,
+        // },
         /* ─── Giá ───────────────────────────────────────── */
         total_price: { type: Number, required: true, min: 0 },
         payment_method: { type: String, enum: ["ONLINE", "CASH_ON_BOARD"], default: "CASH_ON_BOARD" },
@@ -83,6 +91,7 @@ const ParcelSchema = new mongoose.Schema(
             enum: ["RECEIVED", "ON_BUS", "IN_TRANSIT", "DELIVERED", "CANCELLED"],
             default: "RECEIVED",
         },
+
     },
     { timestamps: { createdAt: "created_at", updatedAt: false } }
 );
