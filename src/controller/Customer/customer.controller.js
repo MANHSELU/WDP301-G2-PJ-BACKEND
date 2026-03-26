@@ -17,6 +17,7 @@ const Stops = require("./../../model/Stops")
 const Parcel = require("../../model/Parcel")
 const TripReview = require("./../../model/TripReview");
 const PaymentTransaction = require("./../../model/PaymentTransaction")
+const PricingConfig = require("./../../model/PricingConfig")
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -2966,5 +2967,42 @@ module.exports.cancelOrder = async (req, res) => {
   } catch (err) {
     console.error("[cancelOrder]", err);
     return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+//getActivePricingPublic
+const ok = (res, data, msg = "Thành công", status = 200) =>
+  res.status(status).json({ success: true, message: msg, data });
+const fail = (res, msg = "Lỗi server", status = 500) =>
+  res.status(status).json({ success: false, message: msg });
+
+async function getActivePricing() {
+  const now = new Date();
+  const holiday = await PricingConfig.findOne({
+    type: "HOLIDAY", isActive: true,
+    effective_from: { $lte: now }, effective_to: { $gte: now },
+  }).sort({ effective_from: -1 }).lean();
+  if (holiday) return holiday;
+
+  const def = await PricingConfig.findOne({ type: "DEFAULT", isActive: true })
+    .sort({ created_at: -1 }).lean();
+  return def ?? FALLBACK_PRICING;
+}
+
+function calcVolumetric(l, w, h, divisor = 5000) {
+  if (!l || !w || !h) return { volume_m3: null, volumetric_weight_kg: null };
+  const cm3 = l * w * h;
+  return {
+    volume_m3: +(cm3 / 1_000_000).toFixed(4),
+    volumetric_weight_kg: +(cm3 / divisor).toFixed(2),
+  };
+}
+module.exports.getActivePricingPublic = async (req, res) => {
+  console.log("chạy vào lấy tiền và lấy kg")
+  try {
+    const pricing = await getActivePricing();
+    return ok(res, pricing);
+  } catch (e) {
+    console.log("lỗi chương trình")
+    return fail(res, e.message);
   }
 };

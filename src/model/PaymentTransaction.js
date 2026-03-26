@@ -5,9 +5,13 @@ const PaymentTransactionSchema = new mongoose.Schema(
         payment_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "BookingPayment",
-            required: true,
+            default: null,
         },
-
+        parcel_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Parcel",
+            default: null,
+        },
         gateway: {
             type: String,
             default: "BACNK",

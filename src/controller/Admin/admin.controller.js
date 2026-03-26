@@ -3624,3 +3624,205 @@ module.exports.deleteBusType = async (req, res) => {
     return ok(res, null, "Xoá loại xe thành công");
   } catch (e) { return fail(res, e.message); }
 };
+
+// giá đặt hàng 
+const PricingConfig = require("./../../model/PricingConfig")
+const DEFAULT_PRICING = {
+  price_per_kg: 20_000,
+  document_price_per_kg: 15_000,
+  volumetric_divisor: 5_000,
+  bicycle_price: { SMALL: 100_000, MEDIUM: 150_000, LARGE: 200_000 },
+  motorcycle_price: { SMALL: 250_000, MEDIUM: 350_000, LARGE: 500_000 },
+};
+
+/* ══════════════════════════════════════════════════════
+   GET /api/admin/notcheck/pricing/active
+   Trả về config đang hiệu lực (dùng ở FE customer để tính giá)
+   Ưu tiên: HOLIDAY đang trong thời gian → DEFAULT → hardcode
+══════════════════════════════════════════════════════ */
+module.exports.getActivePricing = async (req, res) => {
+  try {
+    const now = new Date();
+
+    // 1. Tìm HOLIDAY đang active
+    const holiday = await PricingConfig.findOne({
+      type: "HOLIDAY",
+      isActive: true,
+      effective_from: { $lte: now },
+      effective_to: { $gte: now },
+    }).sort({ effective_from: -1 }).lean();
+
+    if (holiday) return ok(res, holiday, "Giá ngày lễ đang áp dụng");
+
+    // 2. Tìm DEFAULT đang active
+    const defaultCfg = await PricingConfig.findOne({ type: "DEFAULT", isActive: true })
+      .sort({ created_at: -1 }).lean();
+
+    if (defaultCfg) return ok(res, defaultCfg, "Giá mặc định");
+
+    // 3. Fallback hardcode
+    return ok(res, { ...DEFAULT_PRICING, type: "FALLBACK", name: "Giá mặc định (hệ thống)" }, "Giá hệ thống");
+  } catch (e) {
+    console.error("getActivePricing:", e);
+    return fail(res, e.message);
+  }
+};
+
+/* ══════════════════════════════════════════════════════
+   GET /api/admin/check/pricing
+   Danh sách tất cả configs (admin)
+══════════════════════════════════════════════════════ */
+module.exports.getAllPricing = async (req, res) => {
+  try {
+    const { type, isActive } = req.query;
+    const filter = {};
+    if (type) filter.type = type;
+    if (isActive !== undefined && isActive !== "") filter.isActive = isActive === "true";
+
+    const list = await PricingConfig.find(filter).sort({ type: 1, created_at: -1 }).lean();
+    return ok(res, list);
+  } catch (e) {
+    console.error("getAllPricing:", e);
+    return fail(res, e.message);
+  }
+};
+
+/* ══════════════════════════════════════════════════════
+   POST /api/admin/check/pricing
+   Tạo config mới
+══════════════════════════════════════════════════════ */
+module.exports.createPricing = async (req, res) => {
+  try {
+    const {
+      name, description, type,
+      effective_from, effective_to,
+      price_per_kg, document_price_per_kg, volumetric_divisor,
+      bicycle_price, motorcycle_price,
+      isActive,
+    } = req.body;
+
+    if (!name?.trim()) return fail(res, "Tên bảng giá là bắt buộc", 400);
+    if (!type) return fail(res, "Loại bảng giá là bắt buộc", 400);
+    if (!["DEFAULT", "HOLIDAY"].includes(type)) return fail(res, "type phải là DEFAULT hoặc HOLIDAY", 400);
+
+    if (type === "HOLIDAY") {
+      if (!effective_from || !effective_to)
+        return fail(res, "Giá ngày lễ cần có effective_from và effective_to", 400);
+      if (new Date(effective_from) >= new Date(effective_to))
+        return fail(res, "effective_from phải trước effective_to", 400);
+    }
+
+    // Validate giá
+    if (price_per_kg == null || price_per_kg < 0) return fail(res, "price_per_kg không hợp lệ", 400);
+    if (document_price_per_kg == null || document_price_per_kg < 0) return fail(res, "document_price_per_kg không hợp lệ", 400);
+    if (!bicycle_price?.SMALL || !bicycle_price?.MEDIUM || !bicycle_price?.LARGE)
+      return fail(res, "bicycle_price cần SMALL, MEDIUM, LARGE", 400);
+    if (!motorcycle_price?.SMALL || !motorcycle_price?.MEDIUM || !motorcycle_price?.LARGE)
+      return fail(res, "motorcycle_price cần SMALL, MEDIUM, LARGE", 400);
+
+    // Nếu tạo DEFAULT mới → tắt DEFAULT cũ
+    if (type === "DEFAULT" && isActive !== false) {
+      await PricingConfig.updateMany({ type: "DEFAULT", isActive: true }, { isActive: false });
+    }
+
+    const config = await PricingConfig.create({
+      name: name.trim(),
+      description: description?.trim() ?? "",
+      type,
+      effective_from: type === "HOLIDAY" ? new Date(effective_from) : null,
+      effective_to: type === "HOLIDAY" ? new Date(effective_to) : null,
+      price_per_kg: Number(price_per_kg),
+      document_price_per_kg: Number(document_price_per_kg),
+      volumetric_divisor: Number(volumetric_divisor ?? 5000),
+      bicycle_price: {
+        SMALL: Number(bicycle_price.SMALL),
+        MEDIUM: Number(bicycle_price.MEDIUM),
+        LARGE: Number(bicycle_price.LARGE),
+      },
+      motorcycle_price: {
+        SMALL: Number(motorcycle_price.SMALL),
+        MEDIUM: Number(motorcycle_price.MEDIUM),
+        LARGE: Number(motorcycle_price.LARGE),
+      },
+      isActive: isActive !== false,
+      created_by: req.user?._id ?? null,
+    });
+
+    return ok(res, config, "Tạo bảng giá thành công", 201);
+  } catch (e) {
+    console.error("createPricing:", e);
+    return fail(res, e.message);
+  }
+};
+
+/* ══════════════════════════════════════════════════════
+   PATCH /api/admin/check/pricing/:id
+   Cập nhật config
+══════════════════════════════════════════════════════ */
+module.exports.updatePricing = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return fail(res, "ID không hợp lệ", 400);
+
+    const config = await PricingConfig.findById(id);
+    if (!config) return fail(res, "Không tìm thấy bảng giá", 404);
+
+    const {
+      name, description, effective_from, effective_to,
+      price_per_kg, document_price_per_kg, volumetric_divisor,
+      bicycle_price, motorcycle_price, isActive,
+    } = req.body;
+
+    if (name !== undefined) config.name = name.trim();
+    if (description !== undefined) config.description = description.trim();
+    if (effective_from !== undefined) config.effective_from = effective_from ? new Date(effective_from) : null;
+    if (effective_to !== undefined) config.effective_to = effective_to ? new Date(effective_to) : null;
+    if (price_per_kg !== undefined) config.price_per_kg = Number(price_per_kg);
+    if (document_price_per_kg !== undefined) config.document_price_per_kg = Number(document_price_per_kg);
+    if (volumetric_divisor !== undefined) config.volumetric_divisor = Number(volumetric_divisor);
+
+    if (bicycle_price) {
+      config.bicycle_price = {
+        SMALL: Number(bicycle_price.SMALL ?? config.bicycle_price.SMALL),
+        MEDIUM: Number(bicycle_price.MEDIUM ?? config.bicycle_price.MEDIUM),
+        LARGE: Number(bicycle_price.LARGE ?? config.bicycle_price.LARGE),
+      };
+    }
+    if (motorcycle_price) {
+      config.motorcycle_price = {
+        SMALL: Number(motorcycle_price.SMALL ?? config.motorcycle_price.SMALL),
+        MEDIUM: Number(motorcycle_price.MEDIUM ?? config.motorcycle_price.MEDIUM),
+        LARGE: Number(motorcycle_price.LARGE ?? config.motorcycle_price.LARGE),
+      };
+    }
+
+    // Nếu bật DEFAULT này → tắt các DEFAULT khác
+    if (isActive === true && config.type === "DEFAULT") {
+      await PricingConfig.updateMany({ type: "DEFAULT", isActive: true, _id: { $ne: id } }, { isActive: false });
+    }
+    if (isActive !== undefined) config.isActive = Boolean(isActive);
+    config.updated_by = req.user?._id ?? null;
+
+    await config.save();
+    return ok(res, config.toObject(), "Cập nhật bảng giá thành công");
+  } catch (e) {
+    console.error("updatePricing:", e);
+    return fail(res, e.message);
+  }
+};
+
+/* ══════════════════════════════════════════════════════
+   DELETE /api/admin/check/pricing/:id
+══════════════════════════════════════════════════════ */
+module.exports.deletePricing = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return fail(res, "ID không hợp lệ", 400);
+    const config = await PricingConfig.findByIdAndDelete(id);
+    if (!config) return fail(res, "Không tìm thấy bảng giá", 404);
+    return ok(res, null, "Xoá bảng giá thành công");
+  } catch (e) {
+    console.error("deletePricing:", e);
+    return fail(res, e.message);
+  }
+};
