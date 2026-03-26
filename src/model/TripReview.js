@@ -4,7 +4,7 @@ const TripReviewSchema = new mongoose.Schema(
     {
         booking_id: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: "TripBooking",
+            ref: "BookingOrder",
             required: true,
             unique: true, // 1 booking chỉ được review 1 lần
         },

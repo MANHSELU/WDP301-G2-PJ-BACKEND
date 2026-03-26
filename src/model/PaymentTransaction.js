@@ -10,7 +10,7 @@ const PaymentTransactionSchema = new mongoose.Schema(
 
         gateway: {
             type: String,
-            default: "BACNK",
+            default: "BANK",
         },
         // thời gian giao dịch 
         transaction_date: {

@@ -10,10 +10,10 @@ const StopLocationSchema = new mongoose.Schema(
     },
     location_name: {
       type: String,
-      required: true, // teens duong quoc lo hay gi do
+      required: true,  // teens duong quoc lo hay gi do
       trim: true,
     },
-    address: { // 07 Tây Sơn, KV4, P.Quang Trung, TP.Quy Nhơn, Tỉnh Bình Định
+    address: {  // 07 Tây Sơn, KV4, P.Quang Trung, TP.Quy Nhơn, Tỉnh Bình Định
       type: String,
       required: false,
     },

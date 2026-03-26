@@ -57,7 +57,9 @@ router.put("/locations/:id", adminController.updateLocation);
 router.patch("/locations/:id/status", adminController.updateLocationStatus);
 router.delete("/locations/:id", adminController.deleteLocation);
 
+
 router.post("/buses", adminController.createBus);
+router.get("/BusType", adminController.getAllBusType);
 router.post("/routes", adminController.createRoutes);
 router.get("/recommendStops", adminController.getSuggestStops);
 router.get("/getAllStops", adminController.getAllStops);

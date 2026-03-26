@@ -17,6 +17,7 @@ const Stops = require("./../../model/Stops")
 const Parcel = require("../../model/Parcel")
 const TripReview = require("./../../model/TripReview");
 const PaymentTransaction = require("./../../model/PaymentTransaction")
+
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -2080,10 +2081,10 @@ module.exports.reviewTrip = async (req, res) => {
     };
     const existing = await TripReview.findOne({ booking_id, user_id });
     if (existing) {
-      return res.status(400).json({ message: "Bạn đã đánh giá rồi" });
+      return res.status(400).json({ message: "Bạn đã đánh giá trước đó" });
     };
     if (rating < 1 || rating > 5) {
-      return res.status(400).json({ message: "Rating phải từ 1 đến 5" });
+    return res.status(400).json({ message: "Đánh giá phải từ 1 sao đến 5 sao" });
     };
     const newReview = await TripReview.create({
       booking_id,

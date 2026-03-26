@@ -1577,8 +1577,8 @@ module.exports.getAllBusType = async (req, res) => {
 // Hàm tạo xe
 module.exports.createBus = async (req, res) => {
   try {
-    const { license_plate, bus_type_id, seat_layout } = req.body;
-    if (!license_plate || !bus_type_id || !seat_layout) {
+    const { license_plate, bus_type_id,current_stop_id, seat_layout } = req.body;
+    if (!license_plate || !bus_type_id || !current_stop_id || !seat_layout) {
       return res.status(404).json({ message: "Các trường là bắt buộc" });
     }
     const bus = await Bus.findOne({ license_plate });
@@ -1588,6 +1588,7 @@ module.exports.createBus = async (req, res) => {
     const newBus = await Bus.create({
       license_plate,
       bus_type_id,
+      current_stop_id,
       seat_layout,
     });
     await newBus.save();
