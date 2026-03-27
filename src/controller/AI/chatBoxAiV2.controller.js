@@ -158,8 +158,6 @@ Trả về JSON duy nhất, KHÔNG kèm text nào khác:
   return JSON.parse(jsonMatch[0]);
 }
 
-// ===================== INTENT HANDLERS =====================
-
 async function handleGreeting() {
   return {
     reply:
@@ -693,7 +691,6 @@ exports.chatAIV2 = async (req, res) => {
         const dateKeywords = ["hôm nay", "hôm ni", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "hom ni", "ngay mai"];
         const isDate = dateKeywords.some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
 
-        // Loại bỏ prefix "từ", "ở", "tại", "đi" khi lưu tên thành phố
         function cleanCityName(text) {
           return text.replace(/^(từ|ở|tại|đi|ra|về|den|tới|qua)\s+/i, "").trim();
         }

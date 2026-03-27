@@ -162,7 +162,7 @@ module.exports.changPassword = async (req, res) => {
     const userId = res.locals.user.id;
     const { oldPass, newPass, confirmNewPass } = req.body;
     if (!oldPass || !newPass || !confirmNewPass) {
-      return res.status(400).json({ message: "Missing required fields" });
+      return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
     const user = await User.findById(userId);
     // if (!user || !user.isVerified) {
@@ -170,28 +170,28 @@ module.exports.changPassword = async (req, res) => {
     // }
     const isMatch = await bcrypt.compare(oldPass, user.password);
     if (!isMatch) {
-      return res.status(400).json({ message: "Old password is not correct" });
+      return res.status(400).json({ message: "Mật khẩu cũ không đúng" });
     }
-    const passwordRegex = /^(?=.*[A-Z]).{9,}$/;
+    const passwordRegex = /^(?=.*[A-Z]).{8,}$/;
     if (!passwordRegex.test(newPass)) {
       return res.status(400).json({
         message:
-          "Password must be longer than 8 characters and contain at least one uppercase letter",
+          "Mật khẩu phải chưa 8 kí tự và ít nhất có 1 chữ viết hoa",
       });
     }
     if (newPass !== confirmNewPass) {
-      return res.status(400).json({ message: "Passwords do not match" });
+      return res.status(400).json({ message: "Mật khẩu xác nhận không khớp" });
     }
     if (oldPass === newPass) {
       return res.status(400).json({
-        message: "New password must be different from old password",
+        message: "Mật khẩu mới phải khác với mật khẩu cũ",
       });
     }
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPass, salt);
     user.password = hashedPassword;
     await user.save();
-    return res.status(200).json({ message: "Password change successfully" });
+    return res.status(200).json({ message: "Đổi mật khẩu thành công" });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
