@@ -165,9 +165,6 @@ module.exports.changPassword = async (req, res) => {
       return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
     const user = await User.findById(userId);
-    // if (!user || !user.isVerified) {
-    //   return res.status(400).json({ message: "Invalid request" });
-    // }
     const isMatch = await bcrypt.compare(oldPass, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Mật khẩu cũ không đúng" });
