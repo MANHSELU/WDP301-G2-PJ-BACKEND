@@ -9,17 +9,15 @@ const BookingPayment = require("../../model/BookingPayment");
 const Bus = require("../../model/Bus");
 const mongoose = require("mongoose");
 
-const OLLAMA_URL = "http://localhost:11434/api/chat";
-const OLLAMA_MODEL = "gpt-oss:20b-cloud";
-
-// ===================== HELPERS =====================
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
 function normalizeDate(text) {
   const today = new Date();
   if (!text || text === "") return today.toISOString().split("T")[0];
 
   const t = text.toLowerCase().trim();
-  if (t.includes("hôm nay")) return today.toISOString().split("T")[0];
+  if (t.includes("hôm nay") || t.includes("hôm ni")) return today.toISOString().split("T")[0];
   if (t.includes("ngày mai") || t === "mai") {
     today.setDate(today.getDate() + 1);
     return today.toISOString().split("T")[0];
@@ -132,13 +130,27 @@ Trả về JSON duy nhất, KHÔNG kèm text nào khác:
 
   messages.push({ role: "user", content: message });
 
-  const response = await axios.post(OLLAMA_URL, {
-    model: OLLAMA_MODEL,
-    stream: false,
-    messages,
-  });
+  // Gemini dùng format khác: system instruction riêng, còn lại là contents
+  const systemMsg = messages.find((m) => m.role === "system");
+  const chatMessages = messages.filter((m) => m.role !== "system");
 
-  const aiText = response.data.message.content;
+  const response = await axios.post(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      system_instruction: systemMsg
+        ? { parts: [{ text: systemMsg.content }] }
+        : undefined,
+      contents: chatMessages.map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      })),
+      generationConfig: {
+        temperature: 0,
+      },
+    }
+  );
+
+  const aiText = response.data.candidates[0].content.parts[0].text;
   // Tìm JSON trong response
   const jsonMatch = aiText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("AI không trả về JSON hợp lệ");
@@ -249,7 +261,13 @@ async function handleSearchTrip(parsed, context) {
   if (!routes.length) {
     return {
       reply: `Không có chuyến xe từ ${parsed.from} đến ${parsed.to} vào ngày ${date}. Bạn thử ngày khác nhé!`,
-      context,
+      context: {
+        ...context,
+        step: "pending_search",
+        pendingFrom: parsed.from,
+        pendingTo: parsed.to,
+        pendingDate: "",
+      },
     };
   }
 
@@ -655,89 +673,86 @@ async function handleConfirmBooking(parsed, context, userId) {
   }
 }
 
-// ===================== MAIN HANDLER =====================
 
 exports.chatAIV2 = async (req, res) => {
   try {
     const { message, history, context } = req.body;
-    // userId có thể có hoặc không (nếu có auth middleware)
     const userId = res.locals.user?.id || null;
 
     if (!message || !message.trim()) {
       return res.status(400).json({ message: "Tin nhắn không được trống" });
     }
-
-    // Nếu đang ở bước pending_search, xử lý trực tiếp không cần AI parse
     if (context?.step === "pending_search") {
       const msg = message.trim();
       const msgLower = msg.toLowerCase();
 
-      // Check xem message có phải là ngày không
-      const dateKeywords = ["hôm nay", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "ngay mai"];
-      const isDate = dateKeywords.some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
-
-      let pendingFrom = context.pendingFrom || "";
-      let pendingTo = context.pendingTo || "";
-      let pendingDate = context.pendingDate || "";
-
-      if (isDate) {
-        pendingDate = msg;
-      } else if (!pendingFrom) {
-        pendingFrom = msg;
-      } else if (!pendingTo) {
-        pendingTo = msg;
-      }
-
-      // Check còn thiếu gì
-      if (!pendingTo && !pendingFrom) {
-        return res.json({
-          reply: 'Bạn muốn đi từ đâu đến đâu ạ?',
-          context: { ...context, pendingFrom, pendingTo, pendingDate },
-        });
-      } else if (!pendingFrom) {
-        return res.json({
-          reply: `Bạn muốn đi đến ${pendingTo}. Vậy bạn xuất phát từ đâu ạ?`,
-          context: { ...context, pendingFrom, pendingTo, pendingDate },
-        });
-      } else if (!pendingTo) {
-        return res.json({
-          reply: `Bạn xuất phát từ ${pendingFrom}. Vậy bạn muốn đến đâu ạ?`,
-          context: { ...context, pendingFrom, pendingTo, pendingDate },
-        });
-      } else if (!pendingDate) {
-        return res.json({
-          reply: `Tìm chuyến ${pendingFrom} → ${pendingTo}. Bạn muốn đi ngày nào ạ? (Ví dụ: "ngày mai", "15/3", "hôm nay")`,
-          context: { ...context, pendingFrom, pendingTo, pendingDate },
-        });
+      // Nếu tin nhắn dài (câu đầy đủ), bỏ qua pending_search → để AI parse
+      const wordCount = msg.split(/\s+/).length;
+      if (wordCount >= 5) {
       } else {
-        // Đủ thông tin → search
-        const parsed = { intent: "search_trip", from: pendingFrom, to: pendingTo, date: pendingDate };
-        const searchResult = await handleSearchTrip(parsed, {});
-        return res.json({
-          reply: searchResult.reply,
-          context: searchResult.context,
-          requireAuth: searchResult.requireAuth || false,
-        });
+        const dateKeywords = ["hôm nay", "hôm ni", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "hom ni", "ngay mai"];
+        const isDate = dateKeywords.some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
+
+        // Loại bỏ prefix "từ", "ở", "tại", "đi" khi lưu tên thành phố
+        function cleanCityName(text) {
+          return text.replace(/^(từ|ở|tại|đi|ra|về|den|tới|qua)\s+/i, "").trim();
+        }
+
+        let pendingFrom = context.pendingFrom || "";
+        let pendingTo = context.pendingTo || "";
+        let pendingDate = context.pendingDate || "";
+        if (isDate) {
+          pendingDate = msg;
+        } else if (!pendingFrom) {
+          pendingFrom = cleanCityName(msg);
+        } else if (!pendingTo) {
+          pendingTo = cleanCityName(msg);
+        }
+        if (!pendingTo && !pendingFrom) {
+          return res.json({
+            reply: 'Bạn muốn đi từ đâu đến đâu ạ?',
+            context: { ...context, pendingFrom, pendingTo, pendingDate },
+          });
+        } else if (!pendingFrom) {
+          return res.json({
+            reply: `Bạn muốn đi đến ${pendingTo}. Vậy bạn xuất phát từ đâu ạ?`,
+            context: { ...context, pendingFrom, pendingTo, pendingDate },
+          });
+        } else if (!pendingTo) {
+          return res.json({
+            reply: `Bạn xuất phát từ ${pendingFrom}. Vậy bạn muốn đến đâu ạ?`,
+            context: { ...context, pendingFrom, pendingTo, pendingDate },
+          });
+        } else if (!pendingDate) {
+          return res.json({
+            reply: `Tìm chuyến ${pendingFrom} → ${pendingTo}. Bạn muốn đi ngày nào ạ? (Ví dụ: "ngày mai", "15/3", "hôm nay")`,
+            context: { ...context, pendingFrom, pendingTo, pendingDate },
+          });
+        } else {
+          // Đủ thông tin → search
+          const parsed = { intent: "search_trip", from: pendingFrom, to: pendingTo, date: pendingDate };
+          const searchResult = await handleSearchTrip(parsed, context);
+          return res.json({
+            reply: searchResult.reply,
+            context: searchResult.context,
+            requireAuth: searchResult.requireAuth || false,
+          });
+        }
       }
     }
-
-    // Parse intent từ Ollama
     let parsed;
     try {
       parsed = await parseIntent(message, history, context);
     } catch (parseErr) {
-      console.error("[parseIntent error]", parseErr.message);
+      console.error("[parseIntent error]", parseErr.message, parseErr.response?.data);
       return res.json({
         reply:
           'Xin lỗi, tôi không hiểu yêu cầu của bạn. Bạn có thể nói rõ hơn được không?\n\nVí dụ: "Tôi muốn đi Đà Nẵng ra Huế ngày mai"',
         context: context || {},
       });
     }
-
     console.log("[ChatAI V2] Parsed intent:", parsed);
-
     let result;
-
     switch (parsed.intent) {
       case "greeting":
         result = await handleGreeting();
@@ -745,16 +760,12 @@ exports.chatAIV2 = async (req, res) => {
 
       case "search_trip":
         {
-          // Merge thông tin từ context trước (nếu đang hỏi bổ sung)
           const from = parsed.from || context?.pendingFrom || "";
           const to = parsed.to || context?.pendingTo || "";
-          // Chỉ lấy date nếu khách thật sự nói ngày, không tự đoán
           let date = context?.pendingDate || "";
           if (parsed.date && parsed.date !== "") {
-            // Kiểm tra xem parsed.date có phải AI tự đoán "hôm nay" không
-            // Nếu message gốc không chứa keyword ngày → bỏ qua
             const msgLower = message.toLowerCase();
-            const hasDateKeyword = ["hôm nay", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "ngay mai"]
+            const hasDateKeyword = ["hôm nay","bữa ni","hôm ni", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "hom ni", "ngay mai","bua ni"]
               .some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
             if (hasDateKeyword) {
               date = parsed.date;
@@ -782,7 +793,6 @@ exports.chatAIV2 = async (req, res) => {
               context: { ...(context || {}), step: "pending_search", pendingFrom: from, pendingTo: to },
             };
           } else {
-            // Đủ thông tin → search
             parsed.from = from;
             parsed.to = to;
             parsed.date = date;
