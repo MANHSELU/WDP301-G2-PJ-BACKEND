@@ -77,6 +77,42 @@ const TripBookingSchema = new mongoose.Schema(
         checkin_at: {
             type: Date,
         },
+        // xác nhận hành lý đã lên xe
+        luggage_confirmed: {
+            type: Boolean,
+            default: false,
+        },
+        luggage_confirmed_at: {
+            type: Date,
+        },
+        luggage_confirmed_by: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+        },
+        luggage_images: [{
+            type: String, // Cloudinary URL
+            trim: true,
+        }],
+        luggage_logs: [{
+            action: {
+                type: String,
+                enum: ['CONFIRMED'],
+                default: 'CONFIRMED',
+            },
+            confirmed_by: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                required: true,
+            },
+            note: {
+                type: String,
+                trim: true,
+            },
+            created_at: {
+                type: Date,
+                default: Date.now,
+            },
+        }],
     },
     {
         timestamps: { createdAt: "created_at", updatedAt: false },

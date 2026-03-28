@@ -112,6 +112,7 @@ module.exports.registerCamera = async (req, res) => {
     }
 };
 module.exports.trips = async (req, res) => {
+    console.log("chạy vào view trips")
     try {
         const userId = res.locals.user.id
         console.log("usersId là : ", userId)

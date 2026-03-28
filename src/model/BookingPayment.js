@@ -7,7 +7,7 @@ const BookingPaymentSchema = new mongoose.Schema(
             ref: "BookingOrder",
             required: true,
         },
-
+        
         payment_method: {
             type: String,
             enum: ["ONLINE", "CASH_ON_BOARD"],

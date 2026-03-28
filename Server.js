@@ -9,6 +9,7 @@ app.use(bodyParser.json());
 var cors = require("cors");
 const ROUTES = require("./src/router/registry.routes");
 const whitelist = ["http://localhost:3000", "http://localhost:5173"];
+const { startTripReminderJob } = require("./src/util/cronJob");  
 
 app.use(
   cors({
@@ -31,6 +32,8 @@ ROUTES.forEach((route) => {
   }
 });
 database.connect();
+startTripReminderJob();
+
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });

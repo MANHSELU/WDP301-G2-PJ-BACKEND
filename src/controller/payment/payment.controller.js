@@ -1,7 +1,9 @@
 const BookingPayment = require("./../../model/BookingPayment");
 const BookingOrder = require("./../../model/BookingOrder");
 const PaymentTransaction = require("./../../model/PaymentTransaction");
-
+const Parcel = require("./../../model/Parcel")
+const { sendBookingConfirmation } = require("./../../util/emailService");
+const Trip = require("./../../model/Trip");
 
 const sepayWebhook = async (req, res) => {
     try {
@@ -79,7 +81,16 @@ const sepayWebhook = async (req, res) => {
         await BookingOrder.findByIdAndUpdate(orderId, {
             order_status: "PAID",
         });
-
+        // Gửi email xác nhận
+        try {
+            const order = await BookingOrder.findById(orderId).lean();
+            if (order?.passenger_email) {
+                const trip = await Trip.findById(order.trip_id).lean();
+                await sendBookingConfirmation({ to: order.passenger_email, order, trip });
+            }
+        } catch (emailErr) {
+            console.error("[SePay Webhook] Email error:", emailErr.message);
+        }
         console.log(`[SePay Webhook] ✅ Order ${orderId} PAID - ${body.transferAmount}đ`);
         return res.status(200).json({ success: true, message: "Payment confirmed" });
 
@@ -237,4 +248,118 @@ const getRefundStatus = async (req, res) => {
         return res.status(500).json({ message: "Lỗi server" });
     }
 };
-module.exports = { sepayWebhook, getPaymentStatus, handleSepayOutbound, getRefundStatus };
+
+//
+const sepayWebhookParcel = async (req, res) => {
+    console.log("[SePay Webhook Parcel] 🔔 Incoming webhook");
+    try {
+        // ── Verify API key từ SePay ──
+        const authHeader = req.headers["authorization"] || req.headers["Authorization"] || "";
+        const incomingKey = authHeader.replace(/^Apikey\s+/i, "").trim();
+
+        if (!incomingKey || incomingKey !== process.env.SEPAY_API_KEY) {
+            console.warn("[SePay Webhook Parcel] ❌ Invalid API key:", incomingKey?.slice(0, 8) + "...");
+            return res.status(200).json({ success: false, message: "Unauthorized" });
+        }
+
+        const body = req.body;
+        console.log("[SePay Webhook Parcel] Body:", body);
+
+        // ── 0. Chỉ xử lý giao dịch TIỀN VÀO ──
+        if (body.transferType !== "in" || !body.transferAmount || body.transferAmount <= 0) {
+            return res.status(200).json({ success: true, message: "Ignored: not an incoming transfer" });
+        }
+
+        // ── 1. Lấy nội dung từ nhiều field (giống booking webhook) ──
+        const content = (body.content || body.code || body.description || "").trim().toUpperCase();
+        if (!content) {
+            return res.status(200).json({ success: true, message: "No content found" });
+        }
+
+        // ── 2. Tìm mã đơn hàng trong nội dung: "DHPKG..." ──
+        const match = content.replace(/\s+/g, "").match(/DH([A-Z0-9]+)/i);
+        if (!match) {
+            return res.status(200).json({ success: true, message: "No parcel code found in content" });
+        }
+        const parcelCode = match[1].toUpperCase();
+
+        // ── 3. Tìm Parcel theo code ──
+        const parcel = await Parcel.findOne({ code: parcelCode });
+        if (!parcel) {
+            return res.status(200).json({ success: true, message: "Parcel not found" });
+        }
+        if (parcel.payment_status === "PAID") {
+            return res.status(200).json({ success: true, message: "Already paid" });
+        }
+
+        // ── 4. Idempotent — tránh xử lý 2 lần cùng 1 giao dịch ──
+        const already = await PaymentTransaction.findOne({
+            reference_code: body.referenceCode || null,
+            transaction_content: content,
+        });
+        if (already) {
+            return res.status(200).json({ success: true, message: "Already processed" });
+        }
+
+        // ── 5. Lưu PaymentTransaction ──
+        await PaymentTransaction.create({
+            payment_id: null,          // ← không có
+            parcel_id: parcel._id,            // ← ref sang Parcel
+            gateway: body.gateway || "BANK",
+            transaction_date: body.transactionDate ? new Date(body.transactionDate) : new Date(),
+            account_number: body.accountNumber || null,
+            sub_account: body.subAccount || null,
+            amount_in: body.transferAmount,
+            amount_out: 0,
+            accumulated: body.accumulated || 0,
+            code: body.code || null,
+            transaction_content: content,
+            reference_number: body.referenceCode || null,
+            raw_body: body,
+        });
+
+        // ── 6. Kiểm tra đủ tiền ──
+        if (Number(body.transferAmount) < parcel.total_price) {
+            parcel.payment_status = "FAILED";
+            await parcel.save();
+            console.warn(`[SePay Webhook Parcel] ⚠️  ${parcelCode} thiếu tiền: nhận ${body.transferAmount} / cần ${parcel.total_price}`);
+            return res.status(200).json({ success: true, message: "Partial payment recorded" });
+        }
+
+        // ── 7. Cập nhật Parcel → PAID + APPROVED ──
+        parcel.payment_status = "PAID";
+        parcel.approval_status = "APPROVED";
+        await parcel.save();
+
+        console.log(`[SePay Webhook Parcel] ✅ ${parcelCode} PAID - ${body.transferAmount}đ`);
+        return res.status(200).json({ success: true, message: "Payment confirmed" });
+
+    } catch (err) {
+        console.error("[SePay Webhook Parcel] Error:", err);
+        return res.status(200).json({ success: false, message: "Internal error" });
+    }
+};
+const getPaymentStatusOrder = async (req, res) => {
+    console.log("chạy vào check trạng thái của đặt hàng ")
+    try {
+        const parcel = await Parcel.findOne({
+            _id: req.params.orderId,
+            sender_id: res.locals.user._id,
+        }).select("payment_status status code").lean();
+        console.log("chạy vào trước parcel")
+        if (!parcel) return res.status(404).json({ success: false, message: "Không tìm thấy đơn" });
+        console.log("thành công")
+        return res.json({
+            success: true,
+            data: {
+                payment_status: parcel.payment_status,   // PENDING | PAID | FAILED
+                order_status: parcel.status,
+                code: parcel.code,
+                paid: parcel.payment_status === "PAID",
+            },
+        });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+}
+module.exports = { sepayWebhook, getPaymentStatus, handleSepayOutbound, getRefundStatus, sepayWebhookParcel, getPaymentStatusOrder };

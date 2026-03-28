@@ -1,5 +1,9 @@
 const Trip = require("../../model/Trip"); // đổi đúng path model của bạn
 const BookingOrder = require("./../../model/BookingOrder")
+const TripBooking = require("../../model/Booking_Order_detail");
+const Parcel = require("../../model/Parcel");
+const upload = require("../../util/upload");
+const cloudinary = require("../../config/cloudinaryConfig");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const Parcel = require("./../../model/Parcel")
 function formatDate(date) {
@@ -250,13 +254,101 @@ module.exports.getAssistantTrips = async (req, res) => {
     }
 };
 
+// module.exports.getAssistantTripDetail = async (req, res) => {
+//     try {
+//         const assistantId = res.locals.user?.id;
+//         const { tripId } = req.params;
+
+//         if (!assistantId)
+//             return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+
+//         const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId })
+//             .populate({
+//                 path: "route_id",
+//                 select: "start_id stop_id distance_km estimated_duration",
+//                 populate: [
+//                     { path: "start_id", select: "name province location" },
+//                     { path: "stop_id", select: "name province location" },
+//                 ],
+//             })
+//             .populate({
+//                 path: "bus_id",
+//                 select: "license_plate bus_type_id",
+//                 populate: { path: "bus_type_id", select: "name seats_count" },
+//             })
+//             .populate({ path: "drivers.driver_id", select: "name phone" })
+//             .lean();
+
+//         if (!trip)
+//             return res.status(404).json({ success: false, message: "Không tìm thấy chuyến xe" });
+
+//         const bookings = await BookingOrder.find({
+//             trip_id: tripId,
+//             order_status: { $ne: "CANCELLED", $ne: "CREATED" },
+//         }).lean();
+
+//         const passengers = bookings.map((b) => ({
+//             _id: b._id,
+//             passenger_name: b.passenger_name || "N/A",
+//             passenger_phone: b.passenger_phone || "N/A",
+//             passenger_email: b.passenger_email || null,
+//             seat_labels: b.seat_labels || [],
+//             total_price: b.total_price || 0,
+//             order_status: b.order_status,
+//             is_boarded: b.is_boarded ?? false,
+//             boarded_at: b.boarded_at ?? null,
+//             is_alighted: b.is_alighted ?? false,
+//             alighted_at: b.alighted_at ?? null,
+//             start_info: b.start_info ?? { city: "", specific_location: "" },
+//             end_info: b.end_info ?? { city: "", specific_location: "" },
+//             created_at: b.created_at,
+//         }));
+
+//         const totalSeatsBooked = passengers.reduce((s, p) => s + (p.seat_labels?.length || 0), 0);
+
+//         const tripDetail = {
+//             _id: trip._id,
+//             departureTime: formatTime(trip.departure_time),
+//             arrivalTime: formatTime(trip.arrival_time),
+//             date: formatDate(trip.departure_time),
+//             departureLocation: trip.route_id?.start_id?.name || "N/A",
+//             departureProvince: trip.route_id?.start_id?.province || "N/A",
+//             arrivalLocation: trip.route_id?.stop_id?.name || "N/A",
+//             arrivalProvince: trip.route_id?.stop_id?.province || "N/A",
+//             distance: trip.scheduled_distance || trip.route_id?.distance_km || null,
+//             duration: formatDuration(trip.scheduled_duration || trip.route_id?.estimated_duration),
+//             vehicleType: trip.bus_id?.bus_type_id?.name || "N/A",
+//             licensePlate: trip.bus_id?.license_plate || "N/A",
+//             totalSeats: trip.bus_id?.bus_type_id?.seats_count || 0,
+//             totalSeatsBooked,
+//             totalPassengers: passengers.length,
+//             status: trip.status,
+//             drivers: (trip.drivers || []).map((d) => ({
+//                 name: d.driver_id?.name || "N/A",
+//                 phone: d.driver_id?.phone || "",
+//                 status: d.status,
+//                 shiftStart: d.shift_start,
+//                 shiftEnd: d.shift_end,
+//                 actualShiftStart: d.actual_shift_start,
+//                 actualShiftEnd: d.actual_shift_end,
+//             })),
+//         };
+
+//         return res.status(200).json({ success: true, data: { trip: tripDetail, passengers } });
+//     } catch (err) {
+//         console.error("[getAssistantTripDetail]", err);
+//         return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+//     }
+// };
+
 module.exports.getAssistantTripDetail = async (req, res) => {
     try {
         const assistantId = res.locals.user?.id;
         const { tripId } = req.params;
 
-        if (!assistantId)
+        if (!assistantId) {
             return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+        }
 
         const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId })
             .populate({
@@ -275,30 +367,58 @@ module.exports.getAssistantTripDetail = async (req, res) => {
             .populate({ path: "drivers.driver_id", select: "name phone" })
             .lean();
 
-        if (!trip)
+        if (!trip) {
             return res.status(404).json({ success: false, message: "Không tìm thấy chuyến xe" });
+        }
 
+        // Lấy tất cả booking của chuyến
         const bookings = await BookingOrder.find({
             trip_id: tripId,
             order_status: { $ne: "CANCELLED", $ne: "CREATED" },
         }).lean();
 
-        const passengers = bookings.map((b) => ({
-            _id: b._id,
-            passenger_name: b.passenger_name || "N/A",
-            passenger_phone: b.passenger_phone || "N/A",
-            passenger_email: b.passenger_email || null,
-            seat_labels: b.seat_labels || [],
-            total_price: b.total_price || 0,
-            order_status: b.order_status,
-            is_boarded: b.is_boarded ?? false,
-            boarded_at: b.boarded_at ?? null,
-            is_alighted: b.is_alighted ?? false,
-            alighted_at: b.alighted_at ?? null,
-            start_info: b.start_info ?? { city: "", specific_location: "" },
-            end_info: b.end_info ?? { city: "", specific_location: "" },
-            created_at: b.created_at,
-        }));
+        // Flatten thành 1 người = 1 ghế (hỗ trợ cả booking cũ và booking mới có passengers array)
+        const passengers = bookings.flatMap((b) => {
+            // Booking mới: có mảng passengers
+            if (b.passengers && b.passengers.length > 0) {
+                return b.passengers.map((p) => ({
+                    _id: `${b._id}_${p.seat_label}`,           // ID ảo cho UI
+                    order_id: b._id,                           // ID thật để PATCH
+                    passenger_name: p.name || "N/A",
+                    passenger_phone: p.phone || "N/A",
+                    passenger_email: b.passenger_email || p.email || null,
+                    seat_labels: [p.seat_label],               // Chỉ 1 ghế
+                    total_price: Math.round(b.total_price / b.seat_labels.length), // chia đều
+                    order_status: b.order_status,
+                    is_boarded: b.is_boarded ?? false,
+                    boarded_at: b.boarded_at ?? null,
+                    is_alighted: b.is_alighted ?? false,
+                    alighted_at: b.alighted_at ?? null,
+                    start_info: b.start_info ?? { city: "", specific_location: "" },
+                    end_info: b.end_info ?? { city: "", specific_location: "" },
+                    created_at: b.created_at,
+                }));
+            }
+
+            // Booking cũ: không có passengers array
+            return [{
+                _id: b._id,
+                order_id: b._id,
+                passenger_name: b.passenger_name || "N/A",
+                passenger_phone: b.passenger_phone || "N/A",
+                passenger_email: b.passenger_email || null,
+                seat_labels: b.seat_labels || [],
+                total_price: b.total_price || 0,
+                order_status: b.order_status,
+                is_boarded: b.is_boarded ?? false,
+                boarded_at: b.boarded_at ?? null,
+                is_alighted: b.is_alighted ?? false,
+                alighted_at: b.alighted_at ?? null,
+                start_info: b.start_info ?? { city: "", specific_location: "" },
+                end_info: b.end_info ?? { city: "", specific_location: "" },
+                created_at: b.created_at,
+            }];
+        });
 
         const totalSeatsBooked = passengers.reduce((s, p) => s + (p.seat_labels?.length || 0), 0);
 
@@ -330,10 +450,17 @@ module.exports.getAssistantTripDetail = async (req, res) => {
             })),
         };
 
-        return res.status(200).json({ success: true, data: { trip: tripDetail, passengers } });
+        return res.status(200).json({
+            success: true,
+            data: { trip: tripDetail, passengers }
+        });
     } catch (err) {
         console.error("[getAssistantTripDetail]", err);
-        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+        return res.status(500).json({
+            success: false,
+            message: "Lỗi server",
+            error: err.message
+        });
     }
 };
 module.exports.updateBoarded = async (req, res) => {
@@ -460,6 +587,7 @@ module.exports.getAssistantTripParcels = async (req, res) => {
         return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
     }
 };
+
 module.exports.updateParcelStatus = async (req, res) => {
     try {
         const assistantId = res.locals.user?.id;

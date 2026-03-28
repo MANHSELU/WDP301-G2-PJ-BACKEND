@@ -17,6 +17,7 @@ const Stops = require("./../../model/Stops")
 const Parcel = require("../../model/Parcel")
 const TripReview = require("./../../model/TripReview");
 const PaymentTransaction = require("./../../model/PaymentTransaction")
+const PricingConfig = require("./../../model/PricingConfig")
 module.exports.register = async (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
@@ -161,36 +162,33 @@ module.exports.changPassword = async (req, res) => {
     const userId = res.locals.user.id;
     const { oldPass, newPass, confirmNewPass } = req.body;
     if (!oldPass || !newPass || !confirmNewPass) {
-      return res.status(400).json({ message: "Missing required fields" });
+      return res.status(400).json({ message: "Các trường là bắt buộc" });
     }
     const user = await User.findById(userId);
-    // if (!user || !user.isVerified) {
-    //   return res.status(400).json({ message: "Invalid request" });
-    // }
     const isMatch = await bcrypt.compare(oldPass, user.password);
     if (!isMatch) {
-      return res.status(400).json({ message: "Old password is not correct" });
+      return res.status(400).json({ message: "Mật khẩu cũ không đúng" });
     }
-    const passwordRegex = /^(?=.*[A-Z]).{9,}$/;
+    const passwordRegex = /^(?=.*[A-Z]).{8,}$/;
     if (!passwordRegex.test(newPass)) {
       return res.status(400).json({
         message:
-          "Password must be longer than 8 characters and contain at least one uppercase letter",
+          "Mật khẩu phải chưa 8 kí tự và ít nhất có 1 chữ viết hoa",
       });
     }
     if (newPass !== confirmNewPass) {
-      return res.status(400).json({ message: "Passwords do not match" });
+      return res.status(400).json({ message: "Mật khẩu xác nhận không khớp" });
     }
     if (oldPass === newPass) {
       return res.status(400).json({
-        message: "New password must be different from old password",
+        message: "Mật khẩu mới phải khác với mật khẩu cũ",
       });
     }
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPass, salt);
     user.password = hashedPassword;
     await user.save();
-    return res.status(200).json({ message: "Password change successfully" });
+    return res.status(200).json({ message: "Đổi mật khẩu thành công" });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -694,6 +692,7 @@ module.exports.searchRoutes = async (req, res) => {
 // };
 
 module.exports.getSearch = async (req, res) => {
+  console.log(" đang vào search")
   try {
     let { nodeId_start, nodeId_end, date, name_start, name_end } = req.body;
 
@@ -747,7 +746,7 @@ module.exports.getSearch = async (req, res) => {
       // ── 4. Tìm trip có ngày xe đến startStop (giờ VN) = ngày khách chọn ──
       const trips = await Trip.find({
         route_id: startStop.route_id,
-        status: { $ne: "CANCELLED" },
+        status: { $ne: "CANCELLED", $ne: "FINISHED" },
       }).lean();
 
       const hasMatchingTrip = trips.some((trip) => {
@@ -1591,14 +1590,16 @@ module.exports.createBooking = async (req, res) => {
       payment_method = "CASH_ON_BOARD",
       passenger_name,
       passenger_phone,
+      passenger_email,
       start_info,   // { city, specific_location }
       end_info,     // { city, specific_location }
+      passengers = [],
     } = req.body;
 
     /* ════════════════════════════════════
        1. Validate input
     ════════════════════════════════════ */
-    if (!user_id || !trip_id || !start_id || !end_id) {
+    if (!user_id || !trip_id || !start_id || !end_id ) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({
@@ -1610,10 +1611,10 @@ module.exports.createBooking = async (req, res) => {
       session.endSession();
       return res.status(400).json({ message: "Vui lòng chọn ít nhất 1 ghế" });
     }
-    if (!passenger_name?.trim() || !passenger_phone?.trim()) {
+    if (!passenger_name?.trim() || !passenger_phone?.trim() || !passenger_email?.trim()) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: "Thiếu họ tên hoặc số điện thoại hành khách" });
+      return res.status(400).json({ message: "Thiếu họ tên, số điện thoại, hoặc email hành khách" });
     }
     if (!ticket_price || Number(ticket_price) <= 0) {
       await session.abortTransaction();
@@ -1635,7 +1636,7 @@ module.exports.createBooking = async (req, res) => {
       session.endSession();
       return res.status(404).json({ message: "Không tìm thấy chuyến xe" });
     }
-    if (trip.status !== "SCHEDULED") {
+    if (trip.status !== "SCHEDULED" && trip.status !== "RUNNING") {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ message: "Chuyến xe không còn nhận đặt vé" });
@@ -1663,18 +1664,55 @@ module.exports.createBooking = async (req, res) => {
       .session(session);
 
     // Gom tất cả ghế bị khoá thành 1 mảng phẳng
-    const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
+    // const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
 
     // Tìm ghế bị trùng với ghế khách đang chọn
-    const conflictSeats = seat_labels.filter((s) => bookedSeats.includes(s));
-    if (conflictSeats.length > 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(409).json({
-        message: `Ghế ${conflictSeats.join(", ")} đang được giữ hoặc đã được đặt. Vui lòng chọn ghế khác.`,
-      });
+    // const conflictSeats = seat_labels.filter((s) => bookedSeats.includes(s));
+    // if (conflictSeats.length > 0) {
+    //   await session.abortTransaction();
+    //   session.endSession();
+    //   return res.status(409).json({
+    //     message: `Ghế ${conflictSeats.join(", ")} đang được giữ hoặc đã được đặt. Vui lòng chọn ghế khác.`,
+    //   });
+    // }
+
+
+    // Batch lấy stop_order của tất cả start/end trong existing orders
+    const routeStopIds = [
+      ...new Set(
+        existingOrders
+          .flatMap((o) => [o.start_id?.toString(), o.end_id?.toString()])
+          .filter(Boolean)
+      ),
+    ];
+    const routeStops = await RouteStop.find({ _id: { $in: routeStopIds } }).select("_id stop_order").lean();
+    const stopOrderMap = Object.fromEntries(routeStops.map((s) => [s._id.toString(), s.stop_order]));
+
+    // Tìm ghế conflict (trùng ghế VÀ trùng đoạn đường)
+    const conflictSet = new Set();
+    for (const order of existingOrders) {
+      const bStartOrder = stopOrderMap[order.start_id?.toString()];
+      const bEndOrder = stopOrderMap[order.end_id?.toString()];
+      if (bStartOrder == null || bEndOrder == null) continue;
+
+      // Overlap: A < D AND C < B
+      const isOverlap =
+        bStartOrder < customerEnd.stop_order &&
+        customerStart.stop_order < bEndOrder;
+
+      if (isOverlap) {
+        for (const label of order.seat_labels || []) {
+          if (seat_labels.includes(label)) conflictSet.add(label);
+        }
+      }
     }
 
+    if (conflictSet.size > 0) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(409).json({
+        message: `Ghế ${[...conflictSet].join(", ")} đang được giữ hoặc đã được đặt trên đoạn đường này. Vui lòng chọn ghế khác.`,
+      });
+    }
     /* ════════════════════════════════════
        4. Tính tổng tiền
     ════════════════════════════════════ */
@@ -1704,6 +1742,18 @@ module.exports.createBooking = async (req, res) => {
           total_price,
           passenger_name: passenger_name.trim(),
           passenger_phone: passenger_phone.trim(),
+          passenger_email: passenger_email.trim(),
+          passengers: passengers.length > 0
+            ? passengers.map(p => ({
+              seat_label: p.seat_label,
+              name: p.name.trim(),
+              phone: p.phone.trim(),
+            }))
+            : seat_labels.map(seat => ({
+              seat_label: seat,
+              name: passenger_name.trim(),
+              phone: passenger_phone.trim(),
+            })),
         },
       ],
       { session }
@@ -2010,7 +2060,7 @@ module.exports.getRoutesToday = async (req, res) => {
 module.exports.getFinishedTripBookingHistory = async (req, res) => {
   try {
     const user_id = res.locals.user.id;
-    const orderHistory = await BookingOrder.find({ user_id, order_status:"PAID" })
+    const orderHistory = await BookingOrder.find({ user_id, order_status: "PAID" })
       .populate({
         path: "trip_id",
         match: { status: "FINISHED" },
@@ -2068,10 +2118,10 @@ module.exports.reviewTrip = async (req, res) => {
     };
     const existing = await TripReview.findOne({ booking_id, user_id });
     if (existing) {
-      return res.status(400).json({ message: "Bạn đã đánh giá rồi" });
+      return res.status(400).json({ message: "Bạn đã đánh giá trước đó" });
     };
     if (rating < 1 || rating > 5) {
-      return res.status(400).json({ message: "Rating phải từ 1 đến 5" });
+      return res.status(400).json({ message: "Đánh giá phải từ 1 sao đến 5 sao" });
     };
     const newReview = await TripReview.create({
       booking_id,
@@ -2954,5 +3004,42 @@ module.exports.cancelOrder = async (req, res) => {
   } catch (err) {
     console.error("[cancelOrder]", err);
     return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+//getActivePricingPublic
+const ok = (res, data, msg = "Thành công", status = 200) =>
+  res.status(status).json({ success: true, message: msg, data });
+const fail = (res, msg = "Lỗi server", status = 500) =>
+  res.status(status).json({ success: false, message: msg });
+
+async function getActivePricing() {
+  const now = new Date();
+  const holiday = await PricingConfig.findOne({
+    type: "HOLIDAY", isActive: true,
+    effective_from: { $lte: now }, effective_to: { $gte: now },
+  }).sort({ effective_from: -1 }).lean();
+  if (holiday) return holiday;
+
+  const def = await PricingConfig.findOne({ type: "DEFAULT", isActive: true })
+    .sort({ created_at: -1 }).lean();
+  return def ?? FALLBACK_PRICING;
+}
+
+function calcVolumetric(l, w, h, divisor = 5000) {
+  if (!l || !w || !h) return { volume_m3: null, volumetric_weight_kg: null };
+  const cm3 = l * w * h;
+  return {
+    volume_m3: +(cm3 / 1_000_000).toFixed(4),
+    volumetric_weight_kg: +(cm3 / divisor).toFixed(2),
+  };
+}
+module.exports.getActivePricingPublic = async (req, res) => {
+  console.log("chạy vào lấy tiền và lấy kg")
+  try {
+    const pricing = await getActivePricing();
+    return ok(res, pricing);
+  } catch (e) {
+    console.log("lỗi chương trình")
+    return fail(res, e.message);
   }
 };
