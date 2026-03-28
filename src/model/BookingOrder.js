@@ -57,8 +57,16 @@ const BookingOrderSchema = new mongoose.Schema(
         },
         passenger_email: {
             type: String,
+            required: false,
             default: null,
         },
+        passengers: [
+            {
+                seat_label: { type: String, required: true },   // "A1", "A2"...
+                name: { type: String, required: true },
+                phone: { type: String, required: true },
+            }
+        ],
         total_price: {
             type: Number,
             required: true,

@@ -5,7 +5,7 @@ const Parcel = require("../../model/Parcel");
 const upload = require("../../util/upload");
 const cloudinary = require("../../config/cloudinaryConfig");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
+const Parcel = require("./../../model/Parcel")
 function formatDate(date) {
     if (!date) return null;
     return new Date(date).toISOString().split("T")[0];
@@ -254,13 +254,101 @@ module.exports.getAssistantTrips = async (req, res) => {
     }
 };
 
+// module.exports.getAssistantTripDetail = async (req, res) => {
+//     try {
+//         const assistantId = res.locals.user?.id;
+//         const { tripId } = req.params;
+
+//         if (!assistantId)
+//             return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+
+//         const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId })
+//             .populate({
+//                 path: "route_id",
+//                 select: "start_id stop_id distance_km estimated_duration",
+//                 populate: [
+//                     { path: "start_id", select: "name province location" },
+//                     { path: "stop_id", select: "name province location" },
+//                 ],
+//             })
+//             .populate({
+//                 path: "bus_id",
+//                 select: "license_plate bus_type_id",
+//                 populate: { path: "bus_type_id", select: "name seats_count" },
+//             })
+//             .populate({ path: "drivers.driver_id", select: "name phone" })
+//             .lean();
+
+//         if (!trip)
+//             return res.status(404).json({ success: false, message: "Không tìm thấy chuyến xe" });
+
+//         const bookings = await BookingOrder.find({
+//             trip_id: tripId,
+//             order_status: { $ne: "CANCELLED", $ne: "CREATED" },
+//         }).lean();
+
+//         const passengers = bookings.map((b) => ({
+//             _id: b._id,
+//             passenger_name: b.passenger_name || "N/A",
+//             passenger_phone: b.passenger_phone || "N/A",
+//             passenger_email: b.passenger_email || null,
+//             seat_labels: b.seat_labels || [],
+//             total_price: b.total_price || 0,
+//             order_status: b.order_status,
+//             is_boarded: b.is_boarded ?? false,
+//             boarded_at: b.boarded_at ?? null,
+//             is_alighted: b.is_alighted ?? false,
+//             alighted_at: b.alighted_at ?? null,
+//             start_info: b.start_info ?? { city: "", specific_location: "" },
+//             end_info: b.end_info ?? { city: "", specific_location: "" },
+//             created_at: b.created_at,
+//         }));
+
+//         const totalSeatsBooked = passengers.reduce((s, p) => s + (p.seat_labels?.length || 0), 0);
+
+//         const tripDetail = {
+//             _id: trip._id,
+//             departureTime: formatTime(trip.departure_time),
+//             arrivalTime: formatTime(trip.arrival_time),
+//             date: formatDate(trip.departure_time),
+//             departureLocation: trip.route_id?.start_id?.name || "N/A",
+//             departureProvince: trip.route_id?.start_id?.province || "N/A",
+//             arrivalLocation: trip.route_id?.stop_id?.name || "N/A",
+//             arrivalProvince: trip.route_id?.stop_id?.province || "N/A",
+//             distance: trip.scheduled_distance || trip.route_id?.distance_km || null,
+//             duration: formatDuration(trip.scheduled_duration || trip.route_id?.estimated_duration),
+//             vehicleType: trip.bus_id?.bus_type_id?.name || "N/A",
+//             licensePlate: trip.bus_id?.license_plate || "N/A",
+//             totalSeats: trip.bus_id?.bus_type_id?.seats_count || 0,
+//             totalSeatsBooked,
+//             totalPassengers: passengers.length,
+//             status: trip.status,
+//             drivers: (trip.drivers || []).map((d) => ({
+//                 name: d.driver_id?.name || "N/A",
+//                 phone: d.driver_id?.phone || "",
+//                 status: d.status,
+//                 shiftStart: d.shift_start,
+//                 shiftEnd: d.shift_end,
+//                 actualShiftStart: d.actual_shift_start,
+//                 actualShiftEnd: d.actual_shift_end,
+//             })),
+//         };
+
+//         return res.status(200).json({ success: true, data: { trip: tripDetail, passengers } });
+//     } catch (err) {
+//         console.error("[getAssistantTripDetail]", err);
+//         return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+//     }
+// };
+
 module.exports.getAssistantTripDetail = async (req, res) => {
     try {
         const assistantId = res.locals.user?.id;
         const { tripId } = req.params;
 
-        if (!assistantId)
+        if (!assistantId) {
             return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
+        }
 
         const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId })
             .populate({
@@ -279,30 +367,58 @@ module.exports.getAssistantTripDetail = async (req, res) => {
             .populate({ path: "drivers.driver_id", select: "name phone" })
             .lean();
 
-        if (!trip)
+        if (!trip) {
             return res.status(404).json({ success: false, message: "Không tìm thấy chuyến xe" });
+        }
 
+        // Lấy tất cả booking của chuyến
         const bookings = await BookingOrder.find({
             trip_id: tripId,
-            order_status: { $ne: "CANCELLED" },
+            order_status: { $ne: "CANCELLED", $ne: "CREATED" },
         }).lean();
 
-        const passengers = bookings.map((b) => ({
-            _id: b._id,
-            passenger_name: b.passenger_name || "N/A",
-            passenger_phone: b.passenger_phone || "N/A",
-            passenger_email: b.passenger_email || null,
-            seat_labels: b.seat_labels || [],
-            total_price: b.total_price || 0,
-            order_status: b.order_status,
-            is_boarded: b.is_boarded ?? false,
-            boarded_at: b.boarded_at ?? null,
-            is_alighted: b.is_alighted ?? false,
-            alighted_at: b.alighted_at ?? null,
-            start_info: b.start_info ?? { city: "", specific_location: "" },
-            end_info: b.end_info ?? { city: "", specific_location: "" },
-            created_at: b.created_at,
-        }));
+        // Flatten thành 1 người = 1 ghế (hỗ trợ cả booking cũ và booking mới có passengers array)
+        const passengers = bookings.flatMap((b) => {
+            // Booking mới: có mảng passengers
+            if (b.passengers && b.passengers.length > 0) {
+                return b.passengers.map((p) => ({
+                    _id: `${b._id}_${p.seat_label}`,           // ID ảo cho UI
+                    order_id: b._id,                           // ID thật để PATCH
+                    passenger_name: p.name || "N/A",
+                    passenger_phone: p.phone || "N/A",
+                    passenger_email: b.passenger_email || p.email || null,
+                    seat_labels: [p.seat_label],               // Chỉ 1 ghế
+                    total_price: Math.round(b.total_price / b.seat_labels.length), // chia đều
+                    order_status: b.order_status,
+                    is_boarded: b.is_boarded ?? false,
+                    boarded_at: b.boarded_at ?? null,
+                    is_alighted: b.is_alighted ?? false,
+                    alighted_at: b.alighted_at ?? null,
+                    start_info: b.start_info ?? { city: "", specific_location: "" },
+                    end_info: b.end_info ?? { city: "", specific_location: "" },
+                    created_at: b.created_at,
+                }));
+            }
+
+            // Booking cũ: không có passengers array
+            return [{
+                _id: b._id,
+                order_id: b._id,
+                passenger_name: b.passenger_name || "N/A",
+                passenger_phone: b.passenger_phone || "N/A",
+                passenger_email: b.passenger_email || null,
+                seat_labels: b.seat_labels || [],
+                total_price: b.total_price || 0,
+                order_status: b.order_status,
+                is_boarded: b.is_boarded ?? false,
+                boarded_at: b.boarded_at ?? null,
+                is_alighted: b.is_alighted ?? false,
+                alighted_at: b.alighted_at ?? null,
+                start_info: b.start_info ?? { city: "", specific_location: "" },
+                end_info: b.end_info ?? { city: "", specific_location: "" },
+                created_at: b.created_at,
+            }];
+        });
 
         const totalSeatsBooked = passengers.reduce((s, p) => s + (p.seat_labels?.length || 0), 0);
 
@@ -334,10 +450,17 @@ module.exports.getAssistantTripDetail = async (req, res) => {
             })),
         };
 
-        return res.status(200).json({ success: true, data: { trip: tripDetail, passengers } });
+        return res.status(200).json({
+            success: true,
+            data: { trip: tripDetail, passengers }
+        });
     } catch (err) {
         console.error("[getAssistantTripDetail]", err);
-        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+        return res.status(500).json({
+            success: false,
+            message: "Lỗi server",
+            error: err.message
+        });
     }
 };
 module.exports.updateBoarded = async (req, res) => {
@@ -408,184 +531,121 @@ module.exports.updateBoarded = async (req, res) => {
     }
 };
 
-// ─── UC1: Confirm Luggage (Xác nhận hành lý đã lên xe) ──────────────────────────
-// PATCH /api/assistant/check/bookings/:bookingId/confirm-luggage
-// Body: { trip_id: string, note?: string }
-// Files: images (multiple)
-// ─────────────────────────────────────────────────────────────────────────────
-module.exports.confirmLuggage = async (req, res) => {
+module.exports.getAssistantTripParcels = async (req, res) => {
     try {
-        const { bookingId } = req.params;
-        const { trip_id, note = '' } = req.body;
         const assistantId = res.locals.user?.id;
-        const files = req.files || [];
+        const { tripId } = req.params;
 
-        if (!bookingId || !trip_id) {
-            return res.status(400).json({ success: false, message: "Booking ID and Trip ID are required" });
-        }
+        if (!assistantId)
+            return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
 
-        // Validate booking exists and belongs to trip
-        const booking = await TripBooking.findOne({ _id: bookingId, trip_id });
-        if (!booking) {
-            return res.status(404).json({ success: false, message: "Booking not found for this trip" });
-        }
+        // Xác nhận chuyến thuộc về phụ xe này
+        const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId }).lean();
+        if (!trip)
+            return res.status(404).json({ success: false, message: "Không tìm thấy chuyến xe" });
 
-        // Validate trip is RUNNING and assistant is assigned
-        const trip = await Trip.findById(trip_id);
-        if (!trip || trip.status !== 'RUNNING' || trip.assistant_id.toString() !== assistantId) {
-            return res.status(403).json({ success: false, message: "Unauthorized or trip not running" });
-        }
+        const parcels = await Parcel.find({
+            trip_id: tripId,
+            status: { $ne: "CANCELLED" },
+        })
+            .populate({
+                path: "start_id",
+                populate: { path: "stop_id", select: "name province" },
+            })
+            .populate({
+                path: "end_id",
+                populate: { path: "stop_id", select: "name province" },
+            })
+            .populate({ path: "pickup_location_id", select: "location_name" })
+            .populate({ path: "dropoff_location_id", select: "location_name" })
+            .lean();
 
-        // Upload images to Cloudinary
-        let imageUrls = [];
-        if (files.length > 0) {
-            const uploadPromises = files.map(file => {
-                return new Promise((resolve, reject) => {
-                    const stream = cloudinary.uploader.upload_stream(
-                        { folder: 'luggage', resource_type: 'image' },
-                        (error, result) => {
-                            if (error) reject(error);
-                            else resolve(result.secure_url);
-                        }
-                    );
-                    stream.end(file.buffer);
-                });
-            });
-            imageUrls = await Promise.all(uploadPromises);
-        }
+        const mapped = parcels.map((p) => ({
+            _id: p._id,
+            code: p.code,
+            receiver_name: p.receiver_name,
+            receiver_phone: p.receiver_phone,
+            weight_kg: p.weight_kg,
+            parcel_type: p.parcel_type || null,
+            total_price: p.total_price,
+            status: p.status,
+            approval_status: p.approval_status,
+            payment_method: p.payment_method,
+            payment_status: p.payment_status,
+            start_province: p.start_id?.stop_id?.province || "N/A",
+            start_name: p.start_id?.stop_id?.name || "N/A",
+            end_province: p.end_id?.stop_id?.province || "N/A",
+            end_name: p.end_id?.stop_id?.name || "N/A",
+            pickup_location: p.pickup_location_id?.location_name || null,
+            dropoff_location: p.dropoff_location_id?.location_name || null,
+            created_at: p.created_at,
+        }));
 
-        // Update booking and log
-        const logEntry = {
-            action: 'CONFIRMED',
-            confirmed_by: assistantId,
-            note,
-            created_at: new Date()
-        };
-
-        const updateData = {
-            luggage_confirmed: true,
-            luggage_confirmed_at: new Date(),
-            luggage_confirmed_by: assistantId,
-            $push: { luggage_logs: logEntry }
-        };
-
-        if (imageUrls.length > 0) {
-            updateData.$push = updateData.$push || {};
-            updateData.$push.luggage_images = { $each: imageUrls };
-        }
-
-        const updatedBooking = await TripBooking.findByIdAndUpdate(bookingId, updateData, { new: true });
-
-        return res.status(200).json({
-            success: true,
-            message: "Luggage confirmed successfully",
-            data: updatedBooking
-        });
-    } catch (error) {
-        console.error("Error in confirmLuggage:", error);
-        return res.status(500).json({ success: false, message: "Failed to confirm luggage", error: error.message });
+        return res.status(200).json({ success: true, data: mapped });
+    } catch (err) {
+        console.error("[getAssistantTripParcels]", err);
+        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
     }
 };
 
-// ─── UC2: Update Parcel Status ────────────────────────────────────────────────
-// PATCH /api/assistant/check/parcels/:parcelId/update-status
-// Body: { new_status: 'ON_BUS'|'IN_TRANSIT'|'DELIVERED', note?: string }
-// ─────────────────────────────────────────────────────────────────────────────
 module.exports.updateParcelStatus = async (req, res) => {
     try {
+        const assistantId = res.locals.user?.id;
         const { parcelId } = req.params;
-        const { new_status, note = '' } = req.body;
-        const assistantId = res.locals.user?.id;
+        const { status } = req.body;
 
-        const validStatuses = ['ON_BUS', 'IN_TRANSIT', 'DELIVERED'];
-        if (!validStatuses.includes(new_status)) {
-            return res.status(400).json({ success: false, message: "Invalid status. Must be ON_BUS, IN_TRANSIT, or DELIVERED" });
-        }
-
-        // Find parcel
-        const parcel = await Parcel.findById(parcelId);
-        if (!parcel) {
-            return res.status(404).json({ success: false, message: "Parcel not found" });
-        }
-
-        // Validate trip is RUNNING or FINISHED and assistant is assigned
-        const trip = await Trip.findById(parcel.trip_id);
-        if (!trip || !['RUNNING', 'FINISHED'].includes(trip.status) || trip.assistant_id.toString() !== assistantId) {
-            return res.status(403).json({ success: false, message: "Unauthorized or invalid trip status" });
-        }
-
-        // Prevent backward status changes
-        const statusOrder = { 'RECEIVED': 1, 'ON_BUS': 2, 'IN_TRANSIT': 3, 'DELIVERED': 4 };
-        if (statusOrder[new_status] <= statusOrder[parcel.status]) {
-            return res.status(400).json({ success: false, message: "Cannot revert to previous status" });
-        }
-
-        // Update parcel and log status change
-        const logEntry = {
-            status: new_status,
-            note,
-            updated_by: assistantId,
-            created_at: new Date()
-        };
-
-        const updatedParcel = await Parcel.findByIdAndUpdate(
-            parcelId,
-            {
-                status: new_status,
-                $push: { status_logs: logEntry }
-            },
-            { new: true }
-        );
-
-        return res.status(200).json({
-            success: true,
-            message: "Parcel status updated successfully",
-            data: updatedParcel
-        });
-    } catch (error) {
-        console.error("Error in updateParcelStatus:", error);
-        return res.status(500).json({ success: false, message: "Failed to update parcel status", error: error.message });
-    }
-};
-
-// ─── Get Trip Detail with Parcels ─────────────────────────────────────────────
-// GET /api/assistant/check/trips/:tripId
-// ─────────────────────────────────────────────────────────────────────────────
-module.exports.getAssistantTripDetail = async (req, res) => {
-    try {
-        const { tripId } = req.params;
-        const assistantId = res.locals.user?.id;
-
-        if (!assistantId) {
+        if (!assistantId)
             return res.status(401).json({ success: false, message: "Không xác định được tài khoản" });
-        }
 
-        // Validate trip belongs to assistant
-        const trip = await Trip.findOne({ _id: tripId, assistant_id: assistantId });
-        if (!trip) {
-            return res.status(403).json({ success: false, message: "Không có quyền truy cập chuyến này" });
-        }
+        // ── Validate status đầu vào ──────────────────────────────────────
+        const ALLOWED = ["ON_BUS", "DELIVERED", "CANCELLED"];
+        if (!ALLOWED.includes(status))
+            return res.status(400).json({
+                success: false,
+                message: `Trạng thái không hợp lệ. Chỉ chấp nhận: ${ALLOWED.join(", ")}`,
+            });
 
-        // Get passengers
-        const passengers = await TripBooking.find({ trip_id: tripId })
-            .populate('order_id', 'order_status')
-            .sort({ created_at: -1 });
+        // ── Tìm parcel và verify chuyến thuộc về phụ xe ──────────────────
+        const parcel = await Parcel.findById(parcelId).lean();
+        if (!parcel)
+            return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
 
-        // Get parcels
-        const parcels = await Parcel.find({ trip_id: tripId })
-            .populate('sender_id', 'name phone')
-            .sort({ created_at: -1 });
+        const trip = await Trip.findOne({
+            _id: parcel.trip_id,
+            assistant_id: assistantId,
+        }).lean();
+        if (!trip)
+            return res.status(403).json({
+                success: false,
+                message: "Bạn không có quyền cập nhật đơn hàng này",
+            });
+
+        // ── Kiểm tra flow hợp lệ ─────────────────────────────────────────
+        const VALID_TRANSITIONS = {
+            RECEIVED: ["ON_BUS", "CANCELLED"],
+            ON_BUS: ["DELIVERED"],
+        };
+        const allowed = VALID_TRANSITIONS[parcel.status] ?? [];
+        if (!allowed.includes(status))
+            return res.status(400).json({
+                success: false,
+                message: `Không thể chuyển từ "${parcel.status}" sang "${status}"`,
+            });
+
+        // ── Cập nhật ─────────────────────────────────────────────────────
+        const updated = await Parcel.findByIdAndUpdate(
+            parcelId,
+            { $set: { status } },
+            { new: true }
+        ).lean();
 
         return res.status(200).json({
             success: true,
-            data: {
-                trip,
-                passengers,
-                parcels
-            }
+            message: "Cập nhật trạng thái hàng hóa thành công",
+            data: { _id: updated._id, status: updated.status },
         });
-    } catch (error) {
-        console.error("Error in getAssistantTripDetail:", error);
-        return res.status(500).json({ success: false, message: "Failed to fetch trip detail", error: error.message });
+    } catch (err) {
+        console.error("[updateParcelStatus]", err);
+        return res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
     }
 };

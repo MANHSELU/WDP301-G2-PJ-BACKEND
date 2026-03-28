@@ -9,17 +9,15 @@ const BookingPayment = require("../../model/BookingPayment");
 const Bus = require("../../model/Bus");
 const mongoose = require("mongoose");
 
-const OLLAMA_URL = "http://localhost:11434/api/chat";
-const OLLAMA_MODEL = "gpt-oss:20b-cloud";
-
-// ===================== HELPERS =====================
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
 function normalizeDate(text) {
   const today = new Date();
   if (!text || text === "") return today.toISOString().split("T")[0];
 
   const t = text.toLowerCase().trim();
-  if (t.includes("hôm nay")) return today.toISOString().split("T")[0];
+  if (t.includes("hôm nay") || t.includes("hôm ni")) return today.toISOString().split("T")[0];
   if (t.includes("ngày mai") || t === "mai") {
     today.setDate(today.getDate() + 1);
     return today.toISOString().split("T")[0];
@@ -33,7 +31,6 @@ function normalizeDate(text) {
     return today.toISOString().split("T")[0];
   }
 
-  // thử parse trực tiếp (dd/mm/yyyy hoặc yyyy-mm-dd)
   const ddmm = text.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{4}))?/);
   if (ddmm) {
     const day = ddmm[1].padStart(2, "0");
@@ -42,7 +39,6 @@ function normalizeDate(text) {
     return `${year}-${month}-${day}`;
   }
 
-  // fallback: nếu không parse được thì trả về hôm nay
   const tryDate = new Date(text);
   if (isNaN(tryDate.getTime())) {
     return new Date().toISOString().split("T")[0];
@@ -65,7 +61,49 @@ function formatDateTime(dateStr) {
   return `${hh}:${mm} ${dd}/${MM}/${yyyy}`;
 }
 
-// Gọi Ollama để parse intent từ tin nhắn user
+// ── [THÊM MỚI] Lấy ghế đã đặt theo overlap đoạn (start_order/end_order) ──────
+// Thay vì lấy toàn bộ ghế của trip, chỉ lấy ghế bận trong đoạn khách đi
+// Hai đoạn [A,B) và [C,D) overlap khi: A < D && C < B
+async function getBookedSeatsBySegment(tripId, startRouteStopId, endRouteStopId) {
+  // Nếu chưa có đoạn → lấy conservative (toàn bộ)
+  if (!startRouteStopId || !endRouteStopId) {
+    const orders = await BookingOrder.find({
+      trip_id: tripId,
+      order_status: { $nin: ["CANCELLED"] },
+    }).select("seat_labels").lean();
+    return [...new Set(orders.flatMap((o) => o.seat_labels || []))];
+  }
+
+  const [customerStart, customerEnd] = await Promise.all([
+    RouteStop.findById(startRouteStopId).select("stop_order").lean(),
+    RouteStop.findById(endRouteStopId).select("stop_order").lean(),
+  ]);
+  if (!customerStart || !customerEnd) return [];
+
+  const customerStartOrder = customerStart.stop_order;
+  const customerEndOrder = customerEnd.stop_order;
+
+  const orders = await BookingOrder.find({
+    trip_id: tripId,
+    order_status: { $nin: ["CANCELLED"] },
+  }).select("seat_labels start_id end_id").lean();
+
+  const overlappingSeats = [];
+  for (const order of orders) {
+    const [bStart, bEnd] = await Promise.all([
+      RouteStop.findById(order.start_id).select("stop_order").lean(),
+      RouteStop.findById(order.end_id).select("stop_order").lean(),
+    ]);
+    if (!bStart || !bEnd) continue;
+    // Overlap check
+    if (bStart.stop_order < customerEndOrder && customerStartOrder < bEnd.stop_order) {
+      overlappingSeats.push(...(order.seat_labels || []));
+    }
+  }
+  return [...new Set(overlappingSeats)];
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function parseIntent(message, conversationHistory, context) {
   const step = context?.step || "none";
   const systemPrompt = `
@@ -107,6 +145,7 @@ Các intent:
    "đặt vé tên Nguyễn Văn A sdt 0901234567", "tên tôi là X, số 09...", "X - 09...", "book luôn, tên A phone 09...", "tên A sdt 09..."
    + passenger_name: họ tên
    + passenger_phone: số điện thoại
+   + passenger_email: email (nếu có, không bắt buộc)
 
 6. cancel - Hủy/bắt đầu lại:
    "hủy", "thôi", "bỏ", "làm lại", "bắt đầu lại", "reset", "ko đặt nữa", "bỏ đi", "quên đi"
@@ -117,12 +156,11 @@ Các intent:
 8. unknown - Thật sự không liên quan gì đến đặt vé xe
 
 Trả về JSON duy nhất, KHÔNG kèm text nào khác:
-{"intent":"...","from":"","to":"","date":"","route_index":0,"trip_index":0,"seats":[],"passenger_name":"","passenger_phone":""}
+{"intent":"...","from":"","to":"","date":"","route_index":0,"trip_index":0,"seats":[],"passenger_name":"","passenger_phone":"","passenger_email":""}
 `;
 
   const messages = [{ role: "system", content: systemPrompt }];
 
-  // Thêm lịch sử hội thoại gần nhất (tối đa 6 tin)
   if (conversationHistory && conversationHistory.length > 0) {
     const recent = conversationHistory.slice(-6);
     for (const msg of recent) {
@@ -132,21 +170,31 @@ Trả về JSON duy nhất, KHÔNG kèm text nào khác:
 
   messages.push({ role: "user", content: message });
 
-  const response = await axios.post(OLLAMA_URL, {
-    model: OLLAMA_MODEL,
-    stream: false,
-    messages,
-  });
+  const systemMsg = messages.find((m) => m.role === "system");
+  const chatMessages = messages.filter((m) => m.role !== "system");
 
-  const aiText = response.data.message.content;
-  // Tìm JSON trong response
+  const response = await axios.post(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      system_instruction: systemMsg
+        ? { parts: [{ text: systemMsg.content }] }
+        : undefined,
+      contents: chatMessages.map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      })),
+      generationConfig: {
+        temperature: 0,
+      },
+    }
+  );
+
+  const aiText = response.data.candidates[0].content.parts[0].text;
   const jsonMatch = aiText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("AI không trả về JSON hợp lệ");
 
   return JSON.parse(jsonMatch[0]);
 }
-
-// ===================== INTENT HANDLERS =====================
 
 async function handleGreeting() {
   return {
@@ -173,7 +221,6 @@ async function handleSearchTrip(parsed, context) {
     };
   }
 
-  // Tìm route qua logic trực tiếp (không gọi API nội bộ)
   const startStops = await RouteStop.find({
     stop_id: fromStop._id,
     is_pickup: true,
@@ -249,11 +296,16 @@ async function handleSearchTrip(parsed, context) {
   if (!routes.length) {
     return {
       reply: `Không có chuyến xe từ ${parsed.from} đến ${parsed.to} vào ngày ${date}. Bạn thử ngày khác nhé!`,
-      context,
+      context: {
+        ...context,
+        step: "pending_search",
+        pendingFrom: parsed.from,
+        pendingTo: parsed.to,
+        pendingDate: "",
+      },
     };
   }
 
-  // Format kết quả
   let reply = `Tìm thấy ${routes.length} tuyến xe từ ${parsed.from} đến ${parsed.to} ngày ${date}:\n\n`;
   routes.forEach((r, i) => {
     reply += `${i + 1}. ${r.start_id?.name} → ${r.stop_id?.name} (${r.distance_km || "?"} km)\n`;
@@ -296,7 +348,6 @@ async function handleSelectRoute(parsed, context) {
 
   const selectedRoute = context.routes[idx];
 
-  // Lấy trips SCHEDULED của route này
   const trips = await Trip.find({
     route_id: selectedRoute._id,
     status: "SCHEDULED",
@@ -357,17 +408,26 @@ async function handleSelectTrip(parsed, context) {
 
   const selectedTrip = context.trips[idx];
 
-  // Lấy ghế đã đặt
-  const orders = await BookingOrder.find({
-    trip_id: selectedTrip._id,
-    order_status: { $ne: "CANCELLED" },
-  }).select("seat_labels");
-  const bookedSeats = [...new Set(orders.flatMap((o) => o.seat_labels || []))];
+  // Lấy RouteStop điểm đón/trả trước để dùng cho overlap check
+  const startRouteStop = await RouteStop.findOne({
+    route_id: context.selectedRouteId,
+    stop_id: context.fromStopId,
+  });
+  const endRouteStop = await RouteStop.findOne({
+    route_id: context.selectedRouteId,
+    stop_id: context.toStopId,
+  });
 
-  // Lấy sơ đồ ghế từ bus
+  // ── [THÊM MỚI] Dùng overlap check thay vì lấy thô toàn bộ trip ──────────
+  const bookedSeats = await getBookedSeatsBySegment(
+    selectedTrip._id,
+    startRouteStop?._id,
+    endRouteStop?._id
+  );
+  // ─────────────────────────────────────────────────────────────────────────
+
   const bus = await Bus.findById(selectedTrip.bus_id).lean();
 
-  let seatInfo = "";
   let allSeats = [];
 
   if (bus && bus.seat_layout) {
@@ -398,16 +458,7 @@ async function handleSelectTrip(parsed, context) {
 
   const availableSeats = allSeats.filter((s) => !bookedSeats.includes(s));
 
-  // Lấy giá vé
-  const startRouteStop = await RouteStop.findOne({
-    route_id: context.selectedRouteId,
-    stop_id: context.fromStopId,
-  });
-  const endRouteStop = await RouteStop.findOne({
-    route_id: context.selectedRouteId,
-    stop_id: context.toStopId,
-  });
-
+  // Lấy giá vé — dùng startRouteStop/endRouteStop đã query ở trên
   let price = 0;
   if (startRouteStop && endRouteStop) {
     const priceDoc = await RouteSegmentPrices.findOne({
@@ -435,7 +486,7 @@ async function handleSelectTrip(parsed, context) {
       selectedTripId: selectedTrip._id,
       selectedTripDeparture: selectedTrip.departure_time,
       busTypeId: selectedTrip.bus_type_id,
-      bookedSeats,
+      bookedSeats,       // ← ghế bận THEO ĐOẠN, đúng với đoạn khách đi
       availableSeats,
       ticketPrice: price,
       startRouteStopId: startRouteStop ? String(startRouteStop._id) : null,
@@ -461,7 +512,6 @@ async function handleSelectSeat(parsed, context) {
     };
   }
 
-  // Validate ghế
   const upperSeats = seats.map((s) => s.toUpperCase().trim());
   const invalidSeats = upperSeats.filter(
     (s) => !context.availableSeats.includes(s),
@@ -491,9 +541,8 @@ async function handleSelectSeat(parsed, context) {
   reply += `Số lượng: ${upperSeats.length} ghế\n`;
   reply += `Giá: ${formatCurrency(context.ticketPrice || 0)}/ghế\n`;
   reply += `Tổng tiền: ${formatCurrency(totalPrice)}\n\n`;
-  reply += `Để đặt vé, vui lòng cung cấp thông tin:\n`;
-  reply += `"Đặt vé, tên [Họ tên], sdt [Số điện thoại]"\n`;
-  reply += `Ví dụ: "Đặt vé, tên Nguyễn Văn A, sdt 0901234567"`;
+  // ── [THÊM MỚI] Thông báo khác — FE sẽ tự hiện form thay vì nhập thủ công
+  reply += `Vui lòng điền thông tin hành khách bên dưới để tiếp tục thanh toán.`;
 
   return {
     reply,
@@ -524,6 +573,8 @@ async function handleConfirmBooking(parsed, context, userId) {
 
   const name = parsed.passenger_name?.trim();
   const phone = parsed.passenger_phone?.trim();
+  // ── [THÊM MỚI] Nhận thêm email (tuỳ chọn) ──────────────────────────────
+  const email = parsed.passenger_email?.trim() || null;
 
   if (!name || !phone) {
     return {
@@ -533,7 +584,6 @@ async function handleConfirmBooking(parsed, context, userId) {
     };
   }
 
-  // Validate phone
   if (!/^(0[0-9]{8,10})$/.test(phone)) {
     return {
       reply:
@@ -542,12 +592,10 @@ async function handleConfirmBooking(parsed, context, userId) {
     };
   }
 
-  // Tạo booking với transaction
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    // Kiểm tra trip còn SCHEDULED không
     const trip = await Trip.findById(context.selectedTripId).session(session);
     if (!trip || trip.status !== "SCHEDULED") {
       await session.abortTransaction();
@@ -558,29 +606,27 @@ async function handleConfirmBooking(parsed, context, userId) {
       };
     }
 
-    // Kiểm tra ghế có bị đặt chưa (real-time)
-    const existingOrders = await BookingOrder.find({
-      trip_id: context.selectedTripId,
-      order_status: { $ne: "CANCELLED" },
-    })
-      .select("seat_labels")
-      .session(session);
-
-    const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
-    const conflictSeats = context.selectedSeats.filter((s) =>
-      bookedSeats.includes(s),
+    // ── [THÊM MỚI] Real-time overlap check trước khi tạo đơn ────────────────
+    // Thay vì lấy thô toàn bộ booking, check đúng theo đoạn khách đi
+    const currentBookedSeats = await getBookedSeatsBySegment(
+      context.selectedTripId,
+      context.startRouteStopId,
+      context.endRouteStopId
     );
+    const conflictSeats = context.selectedSeats.filter((s) =>
+      currentBookedSeats.includes(s)
+    );
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (conflictSeats.length) {
       await session.abortTransaction();
       session.endSession();
       return {
         reply: `Ghế ${conflictSeats.join(", ")} vừa được người khác đặt. Vui lòng chọn ghế khác!`,
-        context: { ...context, step: "select_seat", bookedSeats },
+        context: { ...context, step: "select_seat", bookedSeats: currentBookedSeats },
       };
     }
 
-    // Lấy thông tin điểm đón/trả
     const startRouteStop = await RouteStop.findById(context.startRouteStopId)
       .populate("stop_id", "name specific_location")
       .session(session);
@@ -588,7 +634,6 @@ async function handleConfirmBooking(parsed, context, userId) {
       .populate("stop_id", "name specific_location")
       .session(session);
 
-    // Tạo BookingOrder
     const [order] = await BookingOrder.create(
       [
         {
@@ -601,6 +646,8 @@ async function handleConfirmBooking(parsed, context, userId) {
           total_price: context.totalPrice,
           passenger_name: name,
           passenger_phone: phone,
+          // ── [THÊM MỚI] Lưu thêm email ────────────────────────────────────
+          passenger_email: email,
           start_info: {
             city: startRouteStop?.stop_id?.name || context.from,
             specific_location: startRouteStop?.stop_id?.specific_location || "",
@@ -614,38 +661,49 @@ async function handleConfirmBooking(parsed, context, userId) {
       { session },
     );
 
-    // Tạo BookingPayment
+    // ── [THÊM MỚI] Tạo BookingPayment với ONLINE thay vì CASH_ON_BOARD ──────
     await BookingPayment.create(
       [
         {
           order_id: order._id,
-          payment_method: "CASH_ON_BOARD",
+          payment_method: "ONLINE",
           amount: context.totalPrice,
           payment_status: "PENDING",
         },
       ],
       { session },
     );
+    // ─────────────────────────────────────────────────────────────────────────
 
     await session.commitTransaction();
     session.endSession();
 
-    let reply = `Đặt vé thành công!\n\n`;
+    // ── [THÊM MỚI] Trả về orderId trong context để FE hiện QR polling ────────
+    let reply = `Đơn hàng đã được tạo!\n\n`;
     reply += `Mã đơn: ${order._id}\n`;
     reply += `Tuyến: ${context.selectedRouteName}\n`;
     reply += `Đoạn: ${context.from} → ${context.to}\n`;
     reply += `Khởi hành: ${formatDateTime(context.selectedTripDeparture)}\n`;
     reply += `Ghế: ${context.selectedSeats.join(", ")}\n`;
     reply += `Hành khách: ${name} - ${phone}\n`;
-    reply += `Tổng tiền: ${formatCurrency(context.totalPrice)}\n`;
-    reply += `Thanh toán: Tiền mặt trên xe\n\n`;
-    reply += `Cảm ơn bạn đã đặt vé! Bạn có muốn đặt thêm chuyến khác không?`;
+    reply += `Tổng tiền: ${formatCurrency(context.totalPrice)}\n\n`;
+    reply += `QR chuyển khoản đang hiển thị bên dưới. Vui lòng quét và chuyển khoản với đúng nội dung để xác nhận vé.`;
 
-    return { reply, context: {} };
+    return {
+      reply,
+      context: {
+        // Giữ lại đủ context để FE biết tổng tiền khi hiện QR
+        ...context,
+        step: "waiting_payment",
+        orderId: String(order._id),  // ← FE dùng field này để bắt đầu polling
+      },
+    };
+    // ─────────────────────────────────────────────────────────────────────────
+
   } catch (err) {
     try {
       await session.abortTransaction();
-    } catch (_) {}
+    } catch (_) { }
     session.endSession();
     console.error("[handleConfirmBooking]", err);
     return {
@@ -655,89 +713,83 @@ async function handleConfirmBooking(parsed, context, userId) {
   }
 }
 
-// ===================== MAIN HANDLER =====================
 
 exports.chatAIV2 = async (req, res) => {
   try {
     const { message, history, context } = req.body;
-    // userId có thể có hoặc không (nếu có auth middleware)
     const userId = res.locals.user?.id || null;
 
     if (!message || !message.trim()) {
       return res.status(400).json({ message: "Tin nhắn không được trống" });
     }
-
-    // Nếu đang ở bước pending_search, xử lý trực tiếp không cần AI parse
     if (context?.step === "pending_search") {
       const msg = message.trim();
       const msgLower = msg.toLowerCase();
 
-      // Check xem message có phải là ngày không
-      const dateKeywords = ["hôm nay", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "ngay mai"];
-      const isDate = dateKeywords.some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
-
-      let pendingFrom = context.pendingFrom || "";
-      let pendingTo = context.pendingTo || "";
-      let pendingDate = context.pendingDate || "";
-
-      if (isDate) {
-        pendingDate = msg;
-      } else if (!pendingFrom) {
-        pendingFrom = msg;
-      } else if (!pendingTo) {
-        pendingTo = msg;
-      }
-
-      // Check còn thiếu gì
-      if (!pendingTo && !pendingFrom) {
-        return res.json({
-          reply: 'Bạn muốn đi từ đâu đến đâu ạ?',
-          context: { ...context, pendingFrom, pendingTo, pendingDate },
-        });
-      } else if (!pendingFrom) {
-        return res.json({
-          reply: `Bạn muốn đi đến ${pendingTo}. Vậy bạn xuất phát từ đâu ạ?`,
-          context: { ...context, pendingFrom, pendingTo, pendingDate },
-        });
-      } else if (!pendingTo) {
-        return res.json({
-          reply: `Bạn xuất phát từ ${pendingFrom}. Vậy bạn muốn đến đâu ạ?`,
-          context: { ...context, pendingFrom, pendingTo, pendingDate },
-        });
-      } else if (!pendingDate) {
-        return res.json({
-          reply: `Tìm chuyến ${pendingFrom} → ${pendingTo}. Bạn muốn đi ngày nào ạ? (Ví dụ: "ngày mai", "15/3", "hôm nay")`,
-          context: { ...context, pendingFrom, pendingTo, pendingDate },
-        });
+      const wordCount = msg.split(/\s+/).length;
+      if (wordCount >= 5) {
       } else {
-        // Đủ thông tin → search
-        const parsed = { intent: "search_trip", from: pendingFrom, to: pendingTo, date: pendingDate };
-        const searchResult = await handleSearchTrip(parsed, {});
-        return res.json({
-          reply: searchResult.reply,
-          context: searchResult.context,
-          requireAuth: searchResult.requireAuth || false,
-        });
+        const dateKeywords = ["hôm nay", "hôm ni", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "hom ni", "ngay mai"];
+        const isDate = dateKeywords.some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
+
+        function cleanCityName(text) {
+          return text.replace(/^(từ|ở|tại|đi|ra|về|den|tới|qua)\s+/i, "").trim();
+        }
+
+        let pendingFrom = context.pendingFrom || "";
+        let pendingTo = context.pendingTo || "";
+        let pendingDate = context.pendingDate || "";
+        if (isDate) {
+          pendingDate = msg;
+        } else if (!pendingFrom) {
+          pendingFrom = cleanCityName(msg);
+        } else if (!pendingTo) {
+          pendingTo = cleanCityName(msg);
+        }
+        if (!pendingTo && !pendingFrom) {
+          return res.json({
+            reply: 'Bạn muốn đi từ đâu đến đâu ạ?',
+            context: { ...context, pendingFrom, pendingTo, pendingDate },
+          });
+        } else if (!pendingFrom) {
+          return res.json({
+            reply: `Bạn muốn đi đến ${pendingTo}. Vậy bạn xuất phát từ đâu ạ?`,
+            context: { ...context, pendingFrom, pendingTo, pendingDate },
+          });
+        } else if (!pendingTo) {
+          return res.json({
+            reply: `Bạn xuất phát từ ${pendingFrom}. Vậy bạn muốn đến đâu ạ?`,
+            context: { ...context, pendingFrom, pendingTo, pendingDate },
+          });
+        } else if (!pendingDate) {
+          return res.json({
+            reply: `Tìm chuyến ${pendingFrom} → ${pendingTo}. Bạn muốn đi ngày nào ạ? (Ví dụ: "ngày mai", "15/3", "hôm nay")`,
+            context: { ...context, pendingFrom, pendingTo, pendingDate },
+          });
+        } else {
+          const parsed = { intent: "search_trip", from: pendingFrom, to: pendingTo, date: pendingDate };
+          const searchResult = await handleSearchTrip(parsed, context);
+          return res.json({
+            reply: searchResult.reply,
+            context: searchResult.context,
+            requireAuth: searchResult.requireAuth || false,
+          });
+        }
       }
     }
-
-    // Parse intent từ Ollama
     let parsed;
     try {
       parsed = await parseIntent(message, history, context);
     } catch (parseErr) {
-      console.error("[parseIntent error]", parseErr.message);
+      console.error("[parseIntent error]", parseErr.message, parseErr.response?.data);
       return res.json({
         reply:
           'Xin lỗi, tôi không hiểu yêu cầu của bạn. Bạn có thể nói rõ hơn được không?\n\nVí dụ: "Tôi muốn đi Đà Nẵng ra Huế ngày mai"',
         context: context || {},
       });
     }
-
     console.log("[ChatAI V2] Parsed intent:", parsed);
-
     let result;
-
     switch (parsed.intent) {
       case "greeting":
         result = await handleGreeting();
@@ -745,16 +797,12 @@ exports.chatAIV2 = async (req, res) => {
 
       case "search_trip":
         {
-          // Merge thông tin từ context trước (nếu đang hỏi bổ sung)
           const from = parsed.from || context?.pendingFrom || "";
           const to = parsed.to || context?.pendingTo || "";
-          // Chỉ lấy date nếu khách thật sự nói ngày, không tự đoán
           let date = context?.pendingDate || "";
           if (parsed.date && parsed.date !== "") {
-            // Kiểm tra xem parsed.date có phải AI tự đoán "hôm nay" không
-            // Nếu message gốc không chứa keyword ngày → bỏ qua
             const msgLower = message.toLowerCase();
-            const hasDateKeyword = ["hôm nay", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "ngay mai"]
+            const hasDateKeyword = ["hôm nay", "bữa ni", "hôm ni", "ngày mai", "mai", "mốt", "ngày kia", "ngày mốt", "hom nay", "hom ni", "ngay mai", "bua ni"]
               .some(k => msgLower.includes(k)) || /\d{1,2}[\/\-]\d{1,2}/.test(msgLower);
             if (hasDateKeyword) {
               date = parsed.date;
@@ -782,7 +830,6 @@ exports.chatAIV2 = async (req, res) => {
               context: { ...(context || {}), step: "pending_search", pendingFrom: from, pendingTo: to },
             };
           } else {
-            // Đủ thông tin → search
             parsed.from = from;
             parsed.to = to;
             parsed.date = date;

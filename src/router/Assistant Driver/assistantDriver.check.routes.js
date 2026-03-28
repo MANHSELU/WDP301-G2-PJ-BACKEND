@@ -17,8 +17,10 @@ routerUserCheck.get("/trips", assistantController.getAssistantTrips);
 routerUserCheck.get("/trips/:tripId", assistantController.getAssistantTripDetail);
 // update trạng thái
 routerUserCheck.patch("/bookings/:orderId/boarded", assistantController.updateBoarded);
-// confirm luggage
-routerUserCheck.patch("/bookings/:bookingId/confirm-luggage", upload.array('images', 10), assistantController.confirmLuggage);
-// update parcel status
-routerUserCheck.patch("/parcels/:parcelId/update-status", assistantController.updateParcelStatus);
+// Router
+routerUserCheck.get("/trips/:tripId/parcels", assistantController.getAssistantTripParcels);
+
+// update nhận hàng 
+// Router
+routerUserCheck.patch("/parcels/:parcelId/status", assistantController.updateParcelStatus);
 module.exports = routerUserCheck;

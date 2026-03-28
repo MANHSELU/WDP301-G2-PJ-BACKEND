@@ -2,6 +2,8 @@
 const Trip = require("./../../model/Trip")
 const BookingOrder = require("./../../model/BookingOrder")
 const RouterStop = require("./../../model/route_stops")
+const PaymentTransaction = require("./../../model/PaymentTransaction")
+const BookingPayment = require("./../../model/BookingPayment")
 module.exports.getActiveTrips = async (req, res) => {
     try {
         const { status, page = 1, limit = 10 } = req.query;
@@ -403,3 +405,114 @@ module.exports.getParcelDetail = async (req, res) => {
     }
 };
 
+// hoàn lại tiền
+module.exports.getRefundList = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.max(1, parseInt(req.query.limit) || 20);
+        const skip = (page - 1) * limit;
+
+        const [payments, total] = await Promise.all([
+            BookingPayment
+                .find({ payment_status: "REFUNDED" })
+                .sort({ updated_at: 1 })
+                .skip(skip)
+                .limit(limit)
+                .populate({
+                    path: "order_id",
+                    select: "passenger_name passenger_phone passenger_email total_price seat_labels trip_id",
+                    populate: {
+                        path: "trip_id",
+                        select: "departure_time arrival_time route_id",
+                        populate: {
+                            path: "route_id",
+                            select: "start_id stop_id",
+                            populate: [
+                                { path: "start_id", select: "province" },
+                                { path: "stop_id", select: "province" },
+                            ],
+                        },
+                    },
+                })
+                .lean(),
+            BookingPayment.countDocuments({ payment_status: "REFUNDED" }),
+        ]);
+
+        const data = payments.map((p) => {
+            const order = p.order_id;
+            const trip = order?.trip_id;
+            return {
+                payment_id: p._id,
+                order_id: order?._id,
+                passenger_name: order?.passenger_name ?? "—",
+                passenger_phone: order?.passenger_phone ?? "—",
+                passenger_email: order?.passenger_email ?? null,
+                seat_labels: order?.seat_labels ?? [],
+                paid_amount: p.amount ?? 0,
+                refund_amount: Math.round((p.amount ?? 0) * 0.7), // ← FIX: tính ở đây
+                refund_account: p.refund_account ?? null,
+                refund_bank: p.refund_bank ?? null,
+                paid_at: p.paid_at,
+                trip: trip ? {
+                    departure_time: trip.departure_time,
+                    from: trip.route_id?.start_id?.province ?? null,
+                    to: trip.route_id?.stop_id?.province ?? null,
+                } : null,
+                created_at: p.updated_at,
+            };
+        });
+
+        return res.status(200).json({
+            message: "Danh sách cần hoàn tiền",
+            data,
+            pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+        });
+    } catch (err) {
+        console.error("[getRefundList]", err);
+        return res.status(500).json({ message: "Lỗi server" });
+    }
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   LỄ TÂN — Xác nhận thủ công (backup khi webhook không nhận được)
+   PATCH /api/receptionist/check/refunds/:paymentId/confirm
+═══════════════════════════════════════════════════════════════════ */
+module.exports.confirmRefund = async (req, res) => {
+    try {
+        const { paymentId } = req.params;
+        const { note } = req.body ?? {};
+
+        const payment = await BookingPayment.findOne({
+            _id: paymentId,
+            payment_status: "REFUNDED",
+        });
+        if (!payment)
+            return res.status(404).json({ message: "Không tìm thấy hoặc đã xử lý rồi" });
+
+        await _markRefunded(payment, note);
+
+        return res.status(200).json({
+            message: "Xác nhận hoàn tiền thành công.",
+            data: { payment_id: payment._id, refund_amount: payment.refund_amount, refunded_at: payment.refunded_at },
+        });
+    } catch (err) {
+        console.error("[confirmRefund]", err);
+        return res.status(500).json({ message: "Lỗi server" });
+    }
+};
+
+async function _markRefunded(payment, note) {
+    payment.payment_status = "REFUNDED";
+    payment.refunded_at = new Date();
+    if (note) payment.refund_note = note;
+    await payment.save();
+
+    await PaymentTransaction.create({
+        payment_id: payment._id,
+        gateway: "BANK",
+        transaction_date: new Date(),
+        amount_out: payment.refund_amount,
+        transaction_content: payment.refund_code ?? `Hoàn tiền đơn #${payment.order_id}`,
+        code: `REFUND-${payment._id}`,
+    });
+}

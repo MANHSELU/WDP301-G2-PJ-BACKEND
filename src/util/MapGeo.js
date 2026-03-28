@@ -1,10 +1,13 @@
 const axios = require("axios");
 
-async function geocodeVietnamese(placeName) {
-  const encoded = encodeURIComponent(placeName);
+async function geocodeVietnamese(place, address, province) {
 
-  const url = `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1&countrycodes=vn`;
-  console.log("url là: ", url)
+const q = [place, address, province, 'Việt Nam']
+  .filter(Boolean) 
+  .join(', ');
+
+const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=vn`;  
+console.log("url là: ", url)
 
   const res = await axios.get(url, {
     headers: {
