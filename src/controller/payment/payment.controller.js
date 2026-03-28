@@ -2,6 +2,8 @@ const BookingPayment = require("./../../model/BookingPayment");
 const BookingOrder = require("./../../model/BookingOrder");
 const PaymentTransaction = require("./../../model/PaymentTransaction");
 const Parcel = require("./../../model/Parcel")
+const { sendBookingConfirmation } = require("./../../util/emailService");
+const Trip = require("./../../model/Trip");
 
 const sepayWebhook = async (req, res) => {
     try {
@@ -79,7 +81,16 @@ const sepayWebhook = async (req, res) => {
         await BookingOrder.findByIdAndUpdate(orderId, {
             order_status: "PAID",
         });
-
+        // Gửi email xác nhận
+        try {
+            const order = await BookingOrder.findById(orderId).lean();
+            if (order?.passenger_email) {
+                const trip = await Trip.findById(order.trip_id).lean();
+                await sendBookingConfirmation({ to: order.passenger_email, order, trip });
+            }
+        } catch (emailErr) {
+            console.error("[SePay Webhook] Email error:", emailErr.message);
+        }
         console.log(`[SePay Webhook] ✅ Order ${orderId} PAID - ${body.transferAmount}đ`);
         return res.status(200).json({ success: true, message: "Payment confirmed" });
 

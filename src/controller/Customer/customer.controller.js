@@ -1589,6 +1589,7 @@ module.exports.createBooking = async (req, res) => {
       payment_method = "CASH_ON_BOARD",
       passenger_name,
       passenger_phone,
+      passenger_email,
       start_info,   // { city, specific_location }
       end_info,     // { city, specific_location }
       passengers = [],
@@ -1597,7 +1598,7 @@ module.exports.createBooking = async (req, res) => {
     /* ════════════════════════════════════
        1. Validate input
     ════════════════════════════════════ */
-    if (!user_id || !trip_id || !start_id || !end_id) {
+    if (!user_id || !trip_id || !start_id || !end_id ) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({
@@ -1609,10 +1610,10 @@ module.exports.createBooking = async (req, res) => {
       session.endSession();
       return res.status(400).json({ message: "Vui lòng chọn ít nhất 1 ghế" });
     }
-    if (!passenger_name?.trim() || !passenger_phone?.trim()) {
+    if (!passenger_name?.trim() || !passenger_phone?.trim() || !passenger_email?.trim()) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: "Thiếu họ tên hoặc số điện thoại hành khách" });
+      return res.status(400).json({ message: "Thiếu họ tên, số điện thoại, hoặc email hành khách" });
     }
     if (!ticket_price || Number(ticket_price) <= 0) {
       await session.abortTransaction();
@@ -1703,6 +1704,7 @@ module.exports.createBooking = async (req, res) => {
           total_price,
           passenger_name: passenger_name.trim(),
           passenger_phone: passenger_phone.trim(),
+          passenger_email: passenger_email.trim(),
           passengers: passengers.length > 0
             ? passengers.map(p => ({
               seat_label: p.seat_label,
