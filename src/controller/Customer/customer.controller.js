@@ -1637,7 +1637,7 @@ module.exports.createBooking = async (req, res) => {
       session.endSession();
       return res.status(404).json({ message: "Không tìm thấy chuyến xe" });
     }
-    if (trip.status !== "SCHEDULED") {
+    if (trip.status !== "SCHEDULED" && trip.status !== "RUNNING") {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ message: "Chuyến xe không còn nhận đặt vé" });
@@ -1665,18 +1665,55 @@ module.exports.createBooking = async (req, res) => {
       .session(session);
 
     // Gom tất cả ghế bị khoá thành 1 mảng phẳng
-    const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
+    // const bookedSeats = existingOrders.flatMap((o) => o.seat_labels || []);
 
     // Tìm ghế bị trùng với ghế khách đang chọn
-    const conflictSeats = seat_labels.filter((s) => bookedSeats.includes(s));
-    if (conflictSeats.length > 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(409).json({
-        message: `Ghế ${conflictSeats.join(", ")} đang được giữ hoặc đã được đặt. Vui lòng chọn ghế khác.`,
-      });
+    // const conflictSeats = seat_labels.filter((s) => bookedSeats.includes(s));
+    // if (conflictSeats.length > 0) {
+    //   await session.abortTransaction();
+    //   session.endSession();
+    //   return res.status(409).json({
+    //     message: `Ghế ${conflictSeats.join(", ")} đang được giữ hoặc đã được đặt. Vui lòng chọn ghế khác.`,
+    //   });
+    // }
+
+
+    // Batch lấy stop_order của tất cả start/end trong existing orders
+    const routeStopIds = [
+      ...new Set(
+        existingOrders
+          .flatMap((o) => [o.start_id?.toString(), o.end_id?.toString()])
+          .filter(Boolean)
+      ),
+    ];
+    const routeStops = await RouteStop.find({ _id: { $in: routeStopIds } }).select("_id stop_order").lean();
+    const stopOrderMap = Object.fromEntries(routeStops.map((s) => [s._id.toString(), s.stop_order]));
+
+    // Tìm ghế conflict (trùng ghế VÀ trùng đoạn đường)
+    const conflictSet = new Set();
+    for (const order of existingOrders) {
+      const bStartOrder = stopOrderMap[order.start_id?.toString()];
+      const bEndOrder = stopOrderMap[order.end_id?.toString()];
+      if (bStartOrder == null || bEndOrder == null) continue;
+
+      // Overlap: A < D AND C < B
+      const isOverlap =
+        bStartOrder < customerEnd.stop_order &&
+        customerStart.stop_order < bEndOrder;
+
+      if (isOverlap) {
+        for (const label of order.seat_labels || []) {
+          if (seat_labels.includes(label)) conflictSet.add(label);
+        }
+      }
     }
 
+    if (conflictSet.size > 0) {
+      await session.abortTransaction(); session.endSession();
+      return res.status(409).json({
+        message: `Ghế ${[...conflictSet].join(", ")} đang được giữ hoặc đã được đặt trên đoạn đường này. Vui lòng chọn ghế khác.`,
+      });
+    }
     /* ════════════════════════════════════
        4. Tính tổng tiền
     ════════════════════════════════════ */
