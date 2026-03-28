@@ -1,5 +1,9 @@
 const Trip = require("../../model/Trip"); // đổi đúng path model của bạn
 const BookingOrder = require("./../../model/BookingOrder")
+const TripBooking = require("../../model/Booking_Order_detail");
+const Parcel = require("../../model/Parcel");
+const upload = require("../../util/upload");
+const cloudinary = require("../../config/cloudinaryConfig");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const Parcel = require("./../../model/Parcel")
 function formatDate(date) {

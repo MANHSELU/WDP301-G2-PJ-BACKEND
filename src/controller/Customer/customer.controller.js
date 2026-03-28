@@ -692,6 +692,7 @@ module.exports.searchRoutes = async (req, res) => {
 // };
 
 module.exports.getSearch = async (req, res) => {
+  console.log(" đang vào search")
   try {
     let { nodeId_start, nodeId_end, date, name_start, name_end } = req.body;
 
