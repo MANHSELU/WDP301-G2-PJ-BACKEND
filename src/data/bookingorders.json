@@ -1,0 +1,44 @@
+[
+  {
+    "_id": "69c808d6ae9eb8d5ef944441",
+    "user_id": "69c808442b70d0363213d262",
+    "trip_id": "69c808452b70d0363213d278",
+    "start_id": "69c808452b70d0363213d269",
+    "end_id": "69c808452b70d0363213d26f",
+    "order_status": "PAID",
+    "seat_labels": [
+      "A01"
+    ],
+    "passenger_name": "Nguyen Van A",
+    "passenger_phone": "0912345678",
+    "passenger_email": "a@example.com",
+    "passengers": [],
+    "total_price": 500000,
+    "is_boarded": false,
+    "boarded_at": null,
+    "is_alighted": false,
+    "alighted_at": null,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d6ae9eb8d5ef944442",
+    "user_id": "69c808442b70d0363213d263",
+    "trip_id": "69c808452b70d0363213d27a",
+    "start_id": "69c808452b70d0363213d269",
+    "end_id": "69c808452b70d0363213d26f",
+    "order_status": "PAID",
+    "seat_labels": [
+      "B01"
+    ],
+    "passenger_name": "Tran Thi B",
+    "passenger_phone": "0912345679",
+    "passenger_email": "b@example.com",
+    "passengers": [],
+    "total_price": 700000,
+    "is_boarded": false,
+    "boarded_at": null,
+    "is_alighted": false,
+    "alighted_at": null,
+    "__v": 0
+  }
+]
