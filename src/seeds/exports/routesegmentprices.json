@@ -1,0 +1,32 @@
+[
+  {
+    "_id": "69c808d5ae9eb8d5ef944438",
+    "route_id": "69c808452b70d0363213d265",
+    "start_id": "69c808452b70d0363213d269",
+    "end_id": "69c808452b70d0363213d26f",
+    "bus_type_id": "69c808442b70d0363213d247",
+    "base_price": 500000,
+    "is_active": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944439",
+    "route_id": "69c808452b70d0363213d265",
+    "start_id": "69c808452b70d0363213d269",
+    "end_id": "69c808452b70d0363213d26f",
+    "bus_type_id": "69c808442b70d0363213d248",
+    "base_price": 700000,
+    "is_active": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94443a",
+    "route_id": "69c808452b70d0363213d265",
+    "start_id": "69c808452b70d0363213d269",
+    "end_id": "69c808452b70d0363213d26f",
+    "bus_type_id": "69c808442b70d0363213d249",
+    "base_price": 1000000,
+    "is_active": true,
+    "__v": 0
+  }
+]
