@@ -5,7 +5,6 @@ const Parcel = require("../../model/Parcel");
 const upload = require("../../util/upload");
 const cloudinary = require("../../config/cloudinaryConfig");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const Parcel = require("./../../model/Parcel")
 function formatDate(date) {
     if (!date) return null;
     return new Date(date).toISOString().split("T")[0];
