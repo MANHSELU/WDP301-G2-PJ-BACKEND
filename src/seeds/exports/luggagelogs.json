@@ -1,0 +1,20 @@
+[
+  {
+    "_id": "69c808d6ae9eb8d5ef944456",
+    "booking_id": "69c808452b70d0363213d280",
+    "trip_id": "69c808452b70d0363213d278",
+    "confirmed_by": "69c808442b70d0363213d261",
+    "confirmed_at": "2026-03-28T16:56:32.656Z",
+    "note": "Luggage checked",
+    "__v": 0
+  },
+  {
+    "_id": "69c808d6ae9eb8d5ef944457",
+    "booking_id": "69c808452b70d0363213d281",
+    "trip_id": "69c808452b70d0363213d27a",
+    "confirmed_by": "69c808442b70d0363213d261",
+    "confirmed_at": "2026-03-28T16:56:32.656Z",
+    "note": "Luggage confirmed",
+    "__v": 0
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "_id": "69c808d5ae9eb8d5ef94440b",
+    "name": "Ghế ngồi 45 chỗ",
+    "category": "SEAT",
+    "amenities": [
+      "WiFi",
+      "Điều hòa"
+    ],
+    "isActive": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94440c",
+    "name": "Giường nằm 40 chỗ",
+    "category": "BED",
+    "amenities": [
+      "WiFi",
+      "Điều hòa",
+      "Bữa ăn"
+    ],
+    "isActive": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94440d",
+    "name": "Limousine 22 chỗ",
+    "category": "LIMOUSINE",
+    "amenities": [
+      "WiFi",
+      "Điều hòa",
+      "Nước uống",
+      "Bữa ăn"
+    ],
+    "isActive": true,
+    "__v": 0
+  }
+]

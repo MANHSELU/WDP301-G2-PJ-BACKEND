@@ -1,0 +1,29 @@
+[
+  {
+    "_id": "69c808d5ae9eb8d5ef944429",
+    "start_id": "69c808442b70d0363213d24b",
+    "stop_id": "69c808442b70d0363213d251",
+    "estimated_duration": 30,
+    "distance_km": 1650,
+    "is_active": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94442a",
+    "start_id": "69c808442b70d0363213d24b",
+    "stop_id": "69c808442b70d0363213d24f",
+    "estimated_duration": 15,
+    "distance_km": 750,
+    "is_active": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94442b",
+    "start_id": "69c808442b70d0363213d24f",
+    "stop_id": "69c808442b70d0363213d251",
+    "estimated_duration": 18,
+    "distance_km": 900,
+    "is_active": true,
+    "__v": 0
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "_id": "69c808d6ae9eb8d5ef944453",
+    "booking_id": "69c808452b70d0363213d27d",
+    "trip_id": "69c808452b70d0363213d278",
+    "user_id": "69c808442b70d0363213d262",
+    "rating": 5,
+    "comment": "Great trip!",
+    "driver_rating": 5,
+    "assistant_rating": 4,
+    "bus_rating": 5,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d6ae9eb8d5ef944454",
+    "booking_id": "69c808452b70d0363213d27e",
+    "trip_id": "69c808452b70d0363213d27a",
+    "user_id": "69c808442b70d0363213d263",
+    "rating": 4,
+    "comment": "Good service",
+    "driver_rating": 4,
+    "assistant_rating": 4,
+    "bus_rating": 4,
+    "__v": 0
+  }
+]

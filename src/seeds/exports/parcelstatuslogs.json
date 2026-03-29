@@ -1,0 +1,18 @@
+[
+  {
+    "_id": "69c808d6ae9eb8d5ef944450",
+    "parcel_id": "69c808452b70d0363213d289",
+    "status": "RECEIVED",
+    "note": "Parcel received",
+    "updated_by": "69c808442b70d0363213d261",
+    "__v": 0
+  },
+  {
+    "_id": "69c808d6ae9eb8d5ef944451",
+    "parcel_id": "69c808452b70d0363213d28a",
+    "status": "ON_BUS",
+    "note": "Parcel loaded on bus",
+    "updated_by": "69c808442b70d0363213d261",
+    "__v": 0
+  }
+]

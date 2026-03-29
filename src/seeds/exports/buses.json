@@ -1,0 +1,130 @@
+[
+  {
+    "_id": "69c808d5ae9eb8d5ef94441d",
+    "license_plate": "29A-12345",
+    "bus_type_id": "69c808442b70d0363213d247",
+    "status": "ACTIVE",
+    "seat_layout": {
+      "template_name": "Ghế ngồi 45 chỗ",
+      "floors": 1,
+      "rows": 23,
+      "columns": [
+        {
+          "name": "LEFT",
+          "seats_per_row": 2
+        },
+        {
+          "name": "RIGHT",
+          "seats_per_row": 2
+        }
+      ],
+      "row_overrides": [],
+      "total_seats": 45
+    },
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94441e",
+    "license_plate": "29A-12346",
+    "bus_type_id": "69c808442b70d0363213d248",
+    "status": "ACTIVE",
+    "seat_layout": {
+      "template_name": "Giường nằm 40 chỗ",
+      "floors": 2,
+      "rows": 20,
+      "columns": [
+        {
+          "name": "LEFT",
+          "seats_per_row": 1
+        },
+        {
+          "name": "MIDDLE",
+          "seats_per_row": 1
+        },
+        {
+          "name": "RIGHT",
+          "seats_per_row": 1
+        }
+      ],
+      "row_overrides": [],
+      "total_seats": 40
+    },
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94441f",
+    "license_plate": "29A-12347",
+    "bus_type_id": "69c808442b70d0363213d249",
+    "status": "ACTIVE",
+    "seat_layout": {
+      "template_name": "Limousine 22 chỗ",
+      "floors": 1,
+      "rows": 11,
+      "columns": [
+        {
+          "name": "LEFT",
+          "seats_per_row": 2
+        },
+        {
+          "name": "RIGHT",
+          "seats_per_row": 2
+        }
+      ],
+      "row_overrides": [],
+      "total_seats": 22
+    },
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944420",
+    "license_plate": "29A-12348",
+    "bus_type_id": "69c808442b70d0363213d247",
+    "status": "ACTIVE",
+    "seat_layout": {
+      "template_name": "Ghế ngồi 45 chỗ",
+      "floors": 1,
+      "rows": 23,
+      "columns": [
+        {
+          "name": "LEFT",
+          "seats_per_row": 2
+        },
+        {
+          "name": "RIGHT",
+          "seats_per_row": 2
+        }
+      ],
+      "row_overrides": [],
+      "total_seats": 45
+    },
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944421",
+    "license_plate": "29A-12349",
+    "bus_type_id": "69c808442b70d0363213d248",
+    "status": "ACTIVE",
+    "seat_layout": {
+      "template_name": "Giường nằm 40 chỗ",
+      "floors": 2,
+      "rows": 20,
+      "columns": [
+        {
+          "name": "LEFT",
+          "seats_per_row": 1
+        },
+        {
+          "name": "MIDDLE",
+          "seats_per_row": 1
+        },
+        {
+          "name": "RIGHT",
+          "seats_per_row": 1
+        }
+      ],
+      "row_overrides": [],
+      "total_seats": 40
+    },
+    "__v": 0
+  }
+]

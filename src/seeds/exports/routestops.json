@@ -1,0 +1,65 @@
+[
+  {
+    "_id": "69c808d5ae9eb8d5ef94442d",
+    "route_id": "69c808452b70d0363213d265",
+    "stop_id": "69c808442b70d0363213d24b",
+    "stop_order": 1,
+    "estimated_time": 0,
+    "is_pickup": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94442e",
+    "route_id": "69c808452b70d0363213d265",
+    "stop_id": "69c808442b70d0363213d24c",
+    "stop_order": 2,
+    "estimated_time": 6,
+    "is_pickup": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94442f",
+    "route_id": "69c808452b70d0363213d265",
+    "stop_id": "69c808442b70d0363213d24d",
+    "stop_order": 3,
+    "estimated_time": 12,
+    "is_pickup": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944430",
+    "route_id": "69c808452b70d0363213d265",
+    "stop_id": "69c808442b70d0363213d24e",
+    "stop_order": 4,
+    "estimated_time": 18,
+    "is_pickup": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944431",
+    "route_id": "69c808452b70d0363213d265",
+    "stop_id": "69c808442b70d0363213d24f",
+    "stop_order": 5,
+    "estimated_time": 22,
+    "is_pickup": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944432",
+    "route_id": "69c808452b70d0363213d265",
+    "stop_id": "69c808442b70d0363213d250",
+    "stop_order": 6,
+    "estimated_time": 26,
+    "is_pickup": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944433",
+    "route_id": "69c808452b70d0363213d265",
+    "stop_id": "69c808442b70d0363213d251",
+    "stop_order": 7,
+    "estimated_time": 30,
+    "is_pickup": false,
+    "__v": 0
+  }
+]
