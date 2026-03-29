@@ -1,0 +1,87 @@
+[
+  {
+    "_id": "69c808d5ae9eb8d5ef944417",
+    "stop_id": "69c808442b70d0363213d24b",
+    "location_name": "Bến xe Mỹ Đình",
+    "address": "Phố Tố Hữu, Mỹ Đình, Nam Từ Liêm, Hà Nội",
+    "status": true,
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        105.7667,
+        21.0167
+      ]
+    },
+    "location_type": "BOTH",
+    "is_active": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944418",
+    "stop_id": "69c808442b70d0363213d24b",
+    "location_name": "Bến xe Giáp Bát",
+    "address": "Giáp Bát, Hoàng Mai, Hà Nội",
+    "status": true,
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        105.8333,
+        20.9833
+      ]
+    },
+    "location_type": "BOTH",
+    "is_active": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944419",
+    "stop_id": "69c808442b70d0363213d251",
+    "location_name": "Bến xe Miền Đông",
+    "address": "Đường Phạm Văn Đồng, Linh Chiểu, Thủ Đức, TP.HCM",
+    "status": true,
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        106.6297,
+        10.8231
+      ]
+    },
+    "location_type": "BOTH",
+    "is_active": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94441a",
+    "stop_id": "69c808442b70d0363213d251",
+    "location_name": "Bến xe An Sương",
+    "address": "Quốc lộ 1A, An Sương, Hóc Môn, TP.HCM",
+    "status": true,
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        106.6167,
+        10.7667
+      ]
+    },
+    "location_type": "BOTH",
+    "is_active": true,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef94441b",
+    "stop_id": "69c808442b70d0363213d24f",
+    "location_name": "Bến xe Trung tâm Đà Nẵng",
+    "address": "Tôn Đức Thắng, Hoà Minh, Liên Chiểu, Đà Nẵng",
+    "status": true,
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "location_type": "BOTH",
+    "is_active": true,
+    "__v": 0
+  }
+]

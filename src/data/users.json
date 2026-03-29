@@ -1,0 +1,92 @@
+[
+  {
+    "_id": "69c808d5ae9eb8d5ef944423",
+    "name": "Admin User",
+    "phone": "0901234501",
+    "password": "$2b$10$8ME3VQy6C4g2HE69GiJaGuIJgGD3el5xXVteM.ZFHxyx5YWtLCEbC",
+    "refreshToken": null,
+    "avatar": {
+      "url": "https://static.vecteezy.com/system/resources/previews/036/280/651/original/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg",
+      "publicId": null
+    },
+    "role": "69c808442b70d0363213d242",
+    "status": "active",
+    "isVerified": true,
+    "deletedAt": null,
+    "faceEmbeddings": [],
+    "faceUpdatedAt": null,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944424",
+    "name": "Receptionist 1",
+    "phone": "0901234502",
+    "password": "$2b$10$/dVZ9eQ.LzilUn4gWLf2g.eP33UsEBg5pLSZf5z2SRzly.wlrE6Nm",
+    "refreshToken": null,
+    "avatar": {
+      "url": "https://static.vecteezy.com/system/resources/previews/036/280/651/original/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg",
+      "publicId": null
+    },
+    "role": "69c808442b70d0363213d243",
+    "status": "active",
+    "isVerified": true,
+    "deletedAt": null,
+    "faceEmbeddings": [],
+    "faceUpdatedAt": null,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944425",
+    "name": "Driver 1",
+    "phone": "0901234503",
+    "password": "$2b$10$PGtugCcSqJDhkQV0gz.r7.W5EaKcNnit0dojCdVb6TQ3cVP3YZrJu",
+    "refreshToken": null,
+    "avatar": {
+      "url": "https://static.vecteezy.com/system/resources/previews/036/280/651/original/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg",
+      "publicId": null
+    },
+    "role": "69c808442b70d0363213d244",
+    "status": "active",
+    "isVerified": true,
+    "deletedAt": null,
+    "faceEmbeddings": [],
+    "faceUpdatedAt": null,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944426",
+    "name": "Customer 1",
+    "phone": "0901234504",
+    "password": "$2b$10$OUJZRS3SKTaWSYJgmQqog.j3.wEMJ1OP3jm.CewkB4gBhJp8R34YW",
+    "refreshToken": null,
+    "avatar": {
+      "url": "https://static.vecteezy.com/system/resources/previews/036/280/651/original/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg",
+      "publicId": null
+    },
+    "role": "69c808442b70d0363213d245",
+    "status": "active",
+    "isVerified": true,
+    "deletedAt": null,
+    "faceEmbeddings": [],
+    "faceUpdatedAt": null,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944427",
+    "name": "Customer 2",
+    "phone": "0901234505",
+    "password": "$2b$10$XC2v7mC..BdTRC0nZnNK2uEq2BFU3nnE15c3iSs60K4Jp35rjnvwi",
+    "refreshToken": null,
+    "avatar": {
+      "url": "https://static.vecteezy.com/system/resources/previews/036/280/651/original/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg",
+      "publicId": null
+    },
+    "role": "69c808442b70d0363213d245",
+    "status": "active",
+    "isVerified": true,
+    "deletedAt": null,
+    "faceEmbeddings": [],
+    "faceUpdatedAt": null,
+    "__v": 0
+  }
+]

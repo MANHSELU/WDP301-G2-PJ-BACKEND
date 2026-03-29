@@ -1,0 +1,34 @@
+[
+  {
+    "_id": "69c808d5ae9eb8d5ef944406",
+    "name": "admin",
+    "description": "Quản trị viên hệ thống",
+    "isActive": true,
+    "deletedAt": null,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944407",
+    "name": "receptionist",
+    "description": "Lễ tân",
+    "isActive": true,
+    "deletedAt": null,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944408",
+    "name": "driver",
+    "description": "Tài xế",
+    "isActive": true,
+    "deletedAt": null,
+    "__v": 0
+  },
+  {
+    "_id": "69c808d5ae9eb8d5ef944409",
+    "name": "customer",
+    "description": "Khách hàng",
+    "isActive": true,
+    "deletedAt": null,
+    "__v": 0
+  }
+]
