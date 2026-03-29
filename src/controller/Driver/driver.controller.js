@@ -64,6 +64,7 @@ module.exports.faceLogin = async (req, res) => {
     }
 };
 module.exports.registerCamera = async (req, res) => {
+    console.log("chạy vào trong đăng ký khuôn mặt ")
     try {
         const { image } = req.body;
         // 1️⃣ Validate input
@@ -87,7 +88,7 @@ module.exports.registerCamera = async (req, res) => {
         });
         // 4️⃣ Python trả lỗi
         const data = await response.json();
-
+        console.log("python báo lỗi")
         // ❌ nếu Python báo lỗi
         if (!data.success) {
             return res.status(400).json({
@@ -95,7 +96,7 @@ module.exports.registerCamera = async (req, res) => {
                 message: data.error || data.message || "Face register failed",
             });
         }
-
+        console.log("đăng ký thành công")
         // 5️⃣ Thành công
         return res.status(200).json({
             success: true,
@@ -394,5 +395,61 @@ module.exports.getDriverStats = async (req, res) => {
             message: "Failed to fetch driver stats",
             error: error.message,
         });
+    }
+};
+module.exports.completeShift = async (req, res) => {
+    try {
+        const { id } = req.body;
+        const userId = res.locals.user.id;
+
+        // Kiểm tra ca lái đang RUNNING mới cho hoàn thành
+        const existingTrip = await trip.findOne({
+            _id: id,
+            drivers: {
+                $elemMatch: {
+                    driver_id: userId,
+                    status: "RUNNING"
+                }
+            }
+        });
+
+        if (!existingTrip) {
+            return res.status(404).json({ message: "Không tìm thấy ca lái đang chạy" });
+        }
+
+        // Kiểm tra tất cả drivers còn lại
+        const allDriversDone = existingTrip.drivers.every(
+            (d) => d.driver_id.toString() === userId || d.status === "DONE"
+        );
+
+        const updatedTrip = await trip.findOneAndUpdate(
+            {
+                _id: id,
+                "drivers.driver_id": userId,
+                "drivers.status": "RUNNING"
+            },
+            {
+                // Nếu tất cả driver đều DONE thì trip cũng FINISHED
+                ...(allDriversDone && { status: "FINISHED", actual_arrival_time: new Date() }),
+                $set: {
+                    "drivers.$.status": "DONE",
+                    "drivers.$.actual_shift_end": new Date(),
+                }
+            },
+            { new: true }
+        )
+            .populate("drivers.driver_id", "-face_embedding -password -role")
+            .populate({ path: "bus_id", populate: { path: "bus_type_id" } })
+            .populate({ path: "route_id", populate: [{ path: "start_id" }, { path: "stop_id" }] })
+            .populate("assistant_id", "-face_embedding -password -role");
+
+        if (!updatedTrip) {
+            return res.status(404).json({ message: "Trip not found" });
+        }
+
+        return res.status(200).json({ message: "Hoàn thành ca lái thành công", data: updatedTrip });
+    } catch (err) {
+        console.log("Lỗi:", err);
+        return res.status(500).json({ message: "Server error" });
     }
 };
