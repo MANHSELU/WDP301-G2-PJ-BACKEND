@@ -1,0 +1,175 @@
+PROJECT NAME: Simple Task Manager API
+
+DESCRIPTION:
+This project is a simple backend API for managing tasks (to-do list).
+It is built using Node.js with Express framework and uses a JSON file
+as a mock database. The goal of this project is to demonstrate basic
+CRUD operations, project structure, and clean coding practices.
+
+FEATURES:
+- Create a new task
+- Get all tasks
+- Get task by ID
+- Update task
+- Delete task
+- Basic error handling
+- Modular code structure
+
+TECH STACK:
+- Node.js
+- Express.js
+- File System (fs) module
+
+PROJECT STRUCTURE:
+
+/project-root
+│
+├── app.js
+├── package.json
+├── /routes
+│     └── taskRoutes.js
+├── /controllers
+│     └── taskController.js
+├── /services
+│     └── taskService.js
+├── /data
+│     └── tasks.json
+└── /utils
+      └── helper.js
+
+----------------------------------------
+FILE: app.js
+----------------------------------------
+
+const express = require('express');
+const taskRoutes = require('./routes/taskRoutes');
+
+const app = express();
+app.use(express.json());
+
+app.use('/api/tasks', taskRoutes);
+
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
+
+----------------------------------------
+FILE: routes/taskRoutes.js
+----------------------------------------
+
+const express = require('express');
+const router = express.Router();
+const controller = require('../controllers/taskController');
+
+router.get('/', controller.getAllTasks);
+router.get('/:id', controller.getTaskById);
+router.post('/', controller.createTask);
+router.put('/:id', controller.updateTask);
+router.delete('/:id', controller.deleteTask);
+
+module.exports = router;
+
+----------------------------------------
+FILE: controllers/taskController.js
+----------------------------------------
+
+const service = require('../services/taskService');
+
+exports.getAllTasks = (req, res) => {
+    const tasks = service.getAll();
+    res.json(tasks);
+};
+
+exports.getTaskById = (req, res) => {
+    const task = service.getById(req.params.id);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    res.json(task);
+};
+
+exports.createTask = (req, res) => {
+    const newTask = service.create(req.body);
+    res.status(201).json(newTask);
+};
+
+exports.updateTask = (req, res) => {
+    const updated = service.update(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ message: 'Task not found' });
+    res.json(updated);
+};
+
+exports.deleteTask = (req, res) => {
+    const deleted = service.remove(req.params.id);
+    if (!deleted) return res.status(404).json({ message: 'Task not found' });
+    res.json({ message: 'Deleted successfully' });
+};
+
+----------------------------------------
+FILE: services/taskService.js
+----------------------------------------
+
+const fs = require('fs');
+const path = './data/tasks.json';
+
+function readData() {
+    return JSON.parse(fs.readFileSync(path));
+}
+
+function writeData(data) {
+    fs.writeFileSync(path, JSON.stringify(data, null, 2));
+}
+
+exports.getAll = () => readData();
+
+exports.getById = (id) => {
+    return readData().find(t => t.id === id);
+};
+
+exports.create = (task) => {
+    const tasks = readData();
+    const newTask = { id: Date.now().toString(), ...task };
+    tasks.push(newTask);
+    writeData(tasks);
+    return newTask;
+};
+
+exports.update = (id, updatedData) => {
+    const tasks = readData();
+    const index = tasks.findIndex(t => t.id === id);
+    if (index === -1) return null;
+
+    tasks[index] = { ...tasks[index], ...updatedData };
+    writeData(tasks);
+    return tasks[index];
+};
+
+exports.remove = (id) => {
+    let tasks = readData();
+    const newTasks = tasks.filter(t => t.id !== id);
+    if (tasks.length === newTasks.length) return false;
+
+    writeData(newTasks);
+    return true;
+};
+
+----------------------------------------
+FILE: data/tasks.json
+----------------------------------------
+
+[
+  {
+    "id": "1",
+    "title": "Learn Node.js",
+    "completed": false
+  }
+]
+
+----------------------------------------
+
+NOTES:
+- This project is for learning purposes only.
+- In production, replace file storage with a real database (MongoDB, PostgreSQL).
+- Add authentication (JWT) for better security.
+- Consider using environment variables with dotenv.
+
+END OF FILE
